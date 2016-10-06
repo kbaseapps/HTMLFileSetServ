@@ -1,0 +1,15 @@
+module-name:
+    HTMLFileSetServ
+
+module-description:
+    A KBase module
+
+service-language:
+    java
+
+module-version:
+    0.0.1
+
+owners:
+    [gaprice]
+
