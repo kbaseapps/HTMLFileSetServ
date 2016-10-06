@@ -19,5 +19,6 @@
 	<classpathentry kind="lib" path="/jars/lib/jars/servlet/servlet-api-2.5.jar"/>
 	<classpathentry kind="lib" path="/jars/lib/jars/slf4j/slf4j-api-1.7.7.jar"/>
 	<classpathentry kind="lib" path="/jars/lib/jars/syslog4j/syslog4j-0.9.46.jar"/>
+	<classpathentry kind="lib" path="/jars/lib/jars/apache_commons/commons-io-2.4.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

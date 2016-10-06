@@ -1,6 +1,8 @@
-[![Build Status](https://travis-ci.org/gaprice/HTMLFileSetServ.svg?branch=master)](https://travis-ci.org/gaprice/HTMLFileSetServ)
-
 # HTMLFileSetServ
 ---
 
-This is the basic readme for this module. Include any usage or deployment instructions and links to other documentation here.
+Service for serving the content of a HTMLFileSet object as HTML files.
+
+**Note:** expects the scratch space defined in the deploy.cfg to be a separate
+space *per server instance*. Multiple server instances writing to the same
+scratch space will cause errors.
