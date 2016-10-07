@@ -3,18 +3,24 @@ package htmlfilesetserv;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.PrintStream;
 import java.net.MalformedURLException;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import javax.servlet.ServletException;
+import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpServletRequest;
@@ -25,11 +31,22 @@ import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.servlet.ServletHolder;
 import org.productivity.java.syslog4j.SyslogIF;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+
+import us.kbase.auth.AuthConfig;
+import us.kbase.auth.AuthException;
+import us.kbase.auth.AuthToken;
+import us.kbase.auth.ConfigurableAuthService;
+import us.kbase.common.service.JsonClientCaller;
 import us.kbase.common.service.JsonClientException;
 import us.kbase.common.service.JsonServerServlet;
 import us.kbase.common.service.JsonServerSyslog;
 import us.kbase.common.service.JsonServerSyslog.RpcInfo;
 import us.kbase.common.service.JsonServerSyslog.SyslogOutput;
+import us.kbase.common.service.JsonTokenStream;
+import us.kbase.common.service.ServerException;
+import us.kbase.common.service.UObject;
+import us.kbase.common.service.UnauthorizedException;
 import us.kbase.workspace.WorkspaceClient;
 
 /** A server for the HTMLFileSet type.
@@ -41,16 +58,22 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	
 	//TODO NOW TESTS
 	//TODO NOW JAVADOC
+	//TODO NOW pass workspace ref path as parameter
+	//TODO NOW better error html page
 	
 	private final static String SERVICE_NAME = "HTMLFileSetServ";
 	private static final String X_FORWARDED_FOR = "X-Forwarded-For";
 	private static final String USER_AGENT = "User-Agent";
 	private static final String CFG_SCRATCH = "scratch";
 	private static final String CFG_WS_URL = "workspace-url";
+	private static final String CFG_AUTH_URL = "auth-service-url";
+	private static final String TEMP_DIR = "temp";
 	
 	private final Map<String, String> config;
 	private final Path scratch;
+	private final Path temp;
 	private final URL wsURL;
+	private final ConfigurableAuthService auth;
 	
 	private static final String SERVER_CONTEXT_LOC = "/api/v1/*";
 	private Integer jettyPort = null;
@@ -79,8 +102,10 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			this.scratch = Paths.get(config.get("scratch"))
 					.normalize().toAbsolutePath();
 		}
-		Files.createDirectories(this.scratch);
+		this.temp = this.scratch.resolve(TEMP_DIR);
+		Files.createDirectories(this.temp);
 		logthis("Using directory " + this.scratch + " for cache", true);
+		
 		final String wsURL = config.get(CFG_WS_URL);
 		if (wsURL == null || wsURL.trim().isEmpty()) {
 			throw new ConfigurationException(
@@ -92,11 +117,21 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			throw new ConfigurationException(
 					"Illegal workspace url: " + wsURL, e);
 		}
-		//TODO NOW shut off logger
 		final WorkspaceClient ws = new WorkspaceClient(this.wsURL);
 		logthis(String.format("Contacted workspace version %s at %s",
 				ws.ver(), this.wsURL), true);
 		
+		final AuthConfig acf = new AuthConfig();
+		final String authURL = config.get(CFG_AUTH_URL);
+		if (authURL != null && !authURL.trim().isEmpty()) {
+			try {
+				acf.withKBaseAuthServerURL(new URL(authURL));
+			} catch (MalformedURLException | URISyntaxException e) {
+				throw new ConfigurationException(
+						"Illegal auth url: " + authURL, e);
+			}
+		}
+		auth = new ConfigurableAuthService(acf);
 	}
 	
 	public static void stfuLoggers() {
@@ -127,6 +162,23 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			throw new ConfigurationException(configErr.get(0));
 		}
 		return cfg;
+	}
+	
+	private void logerr(
+			final HttpServletRequest request,
+			final HttpServletResponse response,
+			final int code,
+			final Throwable error)
+			throws IOException {
+		final String se;
+		if (error instanceof ServerException) {
+			se = "\n" + ((ServerException) error).getData();
+		} else {
+			se = "";
+		}
+		logthis(request.getRequestURI() + " " + code + " " +
+				request.getHeader(USER_AGENT) + se, error);
+		response.sendError(code);
 	}
 	
 	private void logthis(final String message) {
@@ -184,9 +236,19 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		rpc.setMethod("GET");
 		logHeaders(request);
 	
+		final AuthToken token;
+		try {
+			token = getToken(request);
+		} catch (AuthException e) {
+			logerr(request, response, 401, e);
+			return;
+		} catch (IOException e) {
+			logerr(request, response, 500, e);
+			return;
+		}
+		
 		String path = request.getPathInfo();
-		//TODO NOW handle workspace stuff
-		System.out.println(path);
+		
 		if (path == null || path.trim().isEmpty()) { // e.g. /api/v1
 			handle404(request, response);
 			return;
@@ -196,15 +258,28 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		}
 		// the path is already normalized by the framework, so no need to
 		// normalize here
-		final Path full = Paths.get(scratch.toString() + path);
-		System.out.println(full);
+		final Path full;
+		try {
+			full = setUpCache(path, token);
+		} catch (NotFoundException e) {
+			handle404(request, response);
+			return;
+		} catch (IOException e) {
+			logerr(request, response, 500, e);
+			return;
+		} catch (ServerException e) {
+			handleWSServerError(request, response, e);
+			return;
+		}
+		
 		if (!Files.isRegularFile(full)) {
 			handle404(request, response);
 			return;
 		}
-		final InputStream is = Files.newInputStream(full);
 		try {
-			IOUtils.copy(is, response.getOutputStream());
+			try (final InputStream is = Files.newInputStream(full)) {
+				IOUtils.copy(is, response.getOutputStream());
+			}
 		} catch (IOException ioe) {
 			logthis(request.getRequestURI() + " 500 " +
 					request.getHeader(USER_AGENT), ioe);
@@ -213,6 +288,115 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		}
 		logthis(request.getRequestURI() + " 200 " +
 				request.getHeader(USER_AGENT));
+	}
+
+	private void handleWSServerError(
+			final HttpServletRequest request,
+			final HttpServletResponse response,
+			final ServerException e)
+			throws IOException {
+		//TODO NOW test various exceptions - no such ws, obj, not authorized to ws, bad input, and handle errors better
+		logerr(request, response, 400, e);
+	}
+
+	private AuthToken getToken(final HttpServletRequest request)
+			throws IOException, AuthException {
+		final String at = request.getHeader("Authorization");
+		if (at != null && !at.trim().isEmpty()) {
+			return auth.validateToken(at);
+		}
+		for (final Cookie c: request.getCookies()) {
+			if (c.getName().equals("token")) {
+				return auth.validateToken(c.getValue());
+			}
+		}
+		return null;
+	}
+
+	private static class NotFoundException extends Exception {}
+	
+	private Path setUpCache(
+			final String path,
+			final AuthToken token)
+			throws NotFoundException, IOException, ServerException {
+		final String ref = getWSRef(path);
+		//TODO NOW absolutize ref with get_object_info
+		//TODO NOW check correct HTMLFileSet type
+		final String absref = ref;
+		final Path filepath = Paths.get(scratch.toString() + path);
+		if (Files.isDirectory(scratch.resolve(absref))) {
+			return filepath;
+		}
+		final String absrefSafe = absref.replace("/", "_");
+		final Path tf = Files.createTempFile(
+				temp, "wsobj." + absrefSafe + ".", ".json.tmp");
+		final UObject uo = saveObjectToFile(token, absref, tf);
+		final Path enc = Files.createTempFile(
+				temp, "encoded." + absrefSafe + ".", ".zip.b64.tmp");
+		try (final JsonTokenStream jts = uo.getPlacedStream();) {
+			//TODO KBCOMMON JTS should allow getting an inputstream
+			jts.setRoot(Arrays.asList("data", "0", "data", "file"));
+			jts.writeJson(enc.toFile());
+		}
+		Files.delete(tf);
+		final Path zip = Files.createTempFile(
+				temp, absrefSafe + ".", ".zip.tmp");
+		try (final OutputStream os = Files.newOutputStream(zip);
+				final InputStream is = Files.newInputStream(enc)) {
+			IOUtils.copy(Base64.getDecoder().wrap(is), os);
+		}
+		Files.delete(enc);
+		//TODO NOW handle workspace stuff
+		
+		return filepath;
+	}
+
+	private UObject saveObjectToFile(
+			final AuthToken token,
+			final String absref,
+			final Path tempfile)
+			throws IOException, ServerException {
+		final JsonClientCaller ws;
+		if (token == null) {
+			ws = new JsonClientCaller(wsURL);
+		} else {
+			try {
+				ws = new JsonClientCaller(wsURL, token);
+			} catch (UnauthorizedException e) {
+				//TODO KBCOMMON remove UExp from this constructor
+				throw new RuntimeException("This is impossible, neat", e);
+			}
+		}
+		ws.setFileForNextRpcResponse(tempfile.toFile());
+		final Map<String, List<Map<String, String>>> arg = new HashMap<>();
+		final Map<String, String> obj = new HashMap<>();
+		obj.put("ref", absref);
+		arg.put("objects", Arrays.asList(obj));
+		final UObject uo;
+		try {
+			uo = ws.jsonrpcCall("Workspace.get_objects2", arg,
+					new TypeReference<UObject>() {}, true, true);
+		} catch (JsonClientException e) {
+			if (e instanceof ServerException) {
+				throw (ServerException) e;
+			}
+			// should never happen - indicates result couldn't be parsed
+			throw new RuntimeException("Something is very badly wrong with " +
+					"the workspace server", e);
+		}
+		return uo;
+	}
+
+	private String getWSRef(final String path) throws NotFoundException {
+		final String[] s = path.split("/", 4);
+		if (s.length != 4) {
+			throw new NotFoundException();
+		}
+		String ref = s[0] + "/" + s[1];
+		if (!"-".equals(s[2])) {
+			ref += "/" + s[2];
+		}
+		return ref;
 	}
 
 	private void handle404(final HttpServletRequest request,
