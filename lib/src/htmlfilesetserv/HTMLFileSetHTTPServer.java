@@ -15,9 +15,12 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 import javax.servlet.ServletException;
 import javax.servlet.http.Cookie;
@@ -324,7 +327,8 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		//TODO NOW check correct HTMLFileSet type
 		final String absref = ref;
 		final Path filepath = Paths.get(scratch.toString() + path);
-		if (Files.isDirectory(scratch.resolve(absref))) {
+		final Path rootpath = scratch.resolve(absref);
+		if (Files.isDirectory(rootpath)) {
 			return filepath;
 		}
 		final String absrefSafe = absref.replace("/", "_");
@@ -346,9 +350,28 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			IOUtils.copy(Base64.getDecoder().wrap(is), os);
 		}
 		Files.delete(enc);
-		//TODO NOW handle workspace stuff
-		
+		unzip(rootpath, zip);
+		Files.delete(zip);
 		return filepath;
+	}
+
+	private void unzip(
+			final Path targetDir,
+			final Path zipfile)
+			throws IOException {
+		try (final ZipFile zf = new ZipFile(zipfile.toFile())) {
+			for (Enumeration<? extends ZipEntry> e = zf.entries();
+					e.hasMoreElements();) {
+				final ZipEntry ze = e.nextElement();
+				final Path file = targetDir.resolve(ze.getName());
+				Files.createDirectories(file.getParent());
+				Files.createFile(file);
+				try (final OutputStream os = Files.newOutputStream(file);
+						final InputStream is = zf.getInputStream(ze)) {
+					IOUtils.copy(is, os);
+				}
+			}
+		}
 	}
 
 	private UObject saveObjectToFile(
