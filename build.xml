@@ -48,6 +48,7 @@
   </path>
 
   <target name="compile" description="compile the source">
+  	<echo>Java/JVM detail version: ${java.version}</echo> 
     <mkdir dir="${classes}"/>
     <mkdir dir="${dist}"/>
     <exec executable="git" outputproperty="git.url"><arg line="config --get remote.origin.url"/></exec>
@@ -57,7 +58,7 @@
 branch=${git.branch}
 commit=${git.commit}</echo>
     <!-- Compile class files-->
-    <javac destdir="${classes}" includeantruntime="false" target="1.7" source="1.7" debug="true" classpathref="compile.classpath">
+    <javac destdir="${classes}" includeantruntime="false" target="1.8" source="1.8" debug="true" classpathref="compile.classpath">
       <src refid="src.path"/>
     </javac>
     <!-- Copy resource files-->
