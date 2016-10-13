@@ -77,6 +77,9 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	private static final String CFG_AUTH_URL = "auth-service-url";
 	private static final String TEMP_DIR = "temp";
 	
+	private static final String TYPE_HTMLFILSET =
+			"HTMLFileSetUtils.HTMLFileSet";
+	
 	private final Map<String, String> config;
 	private final Path scratch;
 	private final Path temp;
@@ -313,9 +316,13 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		if (at != null && !at.trim().isEmpty()) {
 			return auth.validateToken(at);
 		}
-		for (final Cookie c: request.getCookies()) {
-			if (c.getName().equals("token")) {
-				return auth.validateToken(c.getValue());
+		System.out.println(request.getCookies());
+		if (request.getCookies() != null) {
+			for (final Cookie c: request.getCookies()) {
+				System.out.println(c.getName());
+				if (c.getName().equals("token")) {
+					return auth.validateToken(c.getValue());
+				}
 			}
 		}
 		return null;
@@ -386,7 +393,11 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 							.withObjects(Arrays.asList(
 									new ObjectSpecification().withRef(ref))))
 					.get(0);
-			//TODO NOW check correct HTMLFileSet type
+			if (!info.getE3().startsWith(TYPE_HTMLFILSET)) {
+				throw new ServerException(String.format(
+						"The type %s cannot be processed by this service",
+						info.getE3()), -1, "TypeError");
+			}
 			return info.getE7() + "/" + info.getE1() + "/" + info.getE5();
 		} catch (JsonClientException e) {
 			if (e instanceof ServerException) {
