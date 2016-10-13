@@ -36,7 +36,7 @@ public class HTMLFileSetServServerTest {
     
     @BeforeClass
     public static void init() throws Exception {
-        //TODO AUTH make configurable?
+        //TODO TEST AUTH make configurable?
         token = AuthService.validateToken(System.getenv("KB_AUTH_TOKEN"));
         String configFilePath = System.getenv("KB_DEPLOYMENT_CONFIG");
         File deploy = new File(configFilePath);

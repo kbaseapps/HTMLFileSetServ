@@ -46,7 +46,6 @@ import us.kbase.common.service.JsonClientCaller;
 import us.kbase.common.service.JsonClientException;
 import us.kbase.common.service.JsonServerServlet;
 import us.kbase.common.service.JsonServerSyslog;
-import us.kbase.common.service.JsonServerSyslog.RpcInfo;
 import us.kbase.common.service.JsonServerSyslog.SyslogOutput;
 import us.kbase.common.service.JsonTokenStream;
 import us.kbase.common.service.ServerException;
@@ -115,7 +114,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		}
 		this.temp = this.scratch.resolve(TEMP_DIR);
 		Files.createDirectories(this.temp);
-		logthis("Using directory " + this.scratch + " for cache", true);
+		logString("Using directory " + this.scratch + " for cache");
 		
 		final String wsURL = config.get(CFG_WS_URL);
 		if (wsURL == null || wsURL.trim().isEmpty()) {
@@ -129,8 +128,8 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 					"Illegal workspace url: " + wsURL, e);
 		}
 		final WorkspaceClient ws = new WorkspaceClient(this.wsURL);
-		logthis(String.format("Contacted workspace version %s at %s",
-				ws.ver(), this.wsURL), true);
+		logString(String.format("Contacted workspace version %s at %s",
+				ws.ver(), this.wsURL));
 		
 		final AuthConfig acf = new AuthConfig();
 		final String authURL = config.get(CFG_AUTH_URL);
@@ -175,39 +174,46 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		return cfg;
 	}
 	
-	private void logerr(
-			final HttpServletRequest request,
-			final HttpServletResponse response,
+	private void logErr(
 			final int code,
-			final Throwable error)
+			final Throwable error,
+			final RequestInfo ri)
 			throws IOException {
 		final String se;
 		if (error instanceof ServerException) {
-			se = "\n" + ((ServerException) error).getData();
+			final ServerException serv = (ServerException) error;
+			if (serv.getData() != null && !serv.getData().trim().isEmpty()) {
+				se = "\n" + ((ServerException) error).getData();
+			} else {
+				se = "";
+			}
 		} else {
 			se = "";
 		}
-		logthis(request.getRequestURI() + " " + code + " " +
-				request.getHeader(USER_AGENT) + se, error);
-		response.sendError(code);
-	}
-	
-	private void logthis(final String message) {
-		logthis(message, false);
-	}
-	
-	private void logthis(final String message, boolean noGet) {
-		final double time = System.currentTimeMillis() / 1000.0;
-		final String get = noGet ? ": " : ": GET ";
-		System.out.println(time + get + message);
-	}
-	
-	private void logthis(final String message, final Throwable t) {
-		final double time = System.currentTimeMillis() / 1000.0;
 		final ByteArrayOutputStream baos = new ByteArrayOutputStream();
-		t.printStackTrace(new PrintStream(baos));
-		System.out.print(time + ": GET " + message + "\n" +
-				new String(baos.toByteArray(), StandardCharsets.UTF_8));
+		error.printStackTrace(new PrintStream(baos));
+		logMessage(String.format("%s %s %s %s %s%s%s", ri.path, code,
+				ri.ipAddress, ri.requestID, ri.userAgent, se, "\n" +
+				new String(baos.toByteArray(), StandardCharsets.UTF_8)));
+	}
+	
+	private void logMessage(final String message, final RequestInfo ri) {
+		logMessage(String.format("%s %s %s", message, ri.ipAddress,
+				ri.requestID));
+	}
+	
+	private void logMessage(final int code, final RequestInfo ri) {
+		logMessage(String.format("%s %s %s %s %s", ri.path, code, ri.ipAddress,
+				ri.requestID, ri.userAgent));
+	}
+	
+	private void logMessage(final String message) {
+		logString("GET " + message);
+	}
+	
+	private void logString(final String message) {
+		final double time = System.currentTimeMillis() / 1000.0;
+		System.out.println(String.format("%.3f: %s", time, message));
 	}
 	
 	private static class ConfigurationException extends Exception {
@@ -234,34 +240,56 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		response.getOutputStream().flush();
 	}
 	
+	private class RequestInfo {
+		
+		public final String ipAddress;
+		public final String path;
+		public final String userAgent;
+		public final String requestID;
+		
+		public RequestInfo(
+				final String ipAddress,
+				final String userAgent,
+				final String path) {
+			super();
+			this.ipAddress = ipAddress;
+			this.userAgent = userAgent;
+			this.path = path;
+			this.requestID = ("" + Math.random()).substring(2);
+		}
+	}
+	
 	@Override
 	protected void doGet(
 			final HttpServletRequest request,
 			final HttpServletResponse response)
 			throws ServletException, IOException {
 		
-		//TODO NOW log IP address everywhere
-		final RpcInfo rpc = JsonServerSyslog.getCurrentRpcInfo();
-		rpc.setId(("" + Math.random()).substring(2));
-		rpc.setIp(JsonServerServlet.getIpAddress(request, config));
-		rpc.setMethod("GET");
-		logHeaders(request);
+		final RequestInfo ri = new RequestInfo(
+				JsonServerServlet.getIpAddress(request, config),
+				request.getHeader(USER_AGENT),
+				request.getRequestURI());
+
+		logHeaders(request, ri);
 	
 		final AuthToken token;
 		try {
 			token = getToken(request);
 		} catch (AuthException e) {
-			logerr(request, response, 401, e);
+			logErr(401, e, ri);
+			response.sendError(401);
 			return;
 		} catch (IOException e) {
-			logerr(request, response, 500, e);
+			logErr(500, e, ri);
+			response.sendError(500);
 			return;
 		}
 		
 		String path = request.getPathInfo();
 		
 		if (path == null || path.trim().isEmpty()) { // e.g. /api/v1
-			handle404(request, response);
+			logMessage(404, ri);
+			response.sendError(404);
 			return;
 		}
 		if (path.endsWith("/")) { // e.g. /docs/
@@ -271,20 +299,24 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		// normalize here
 		final Path full;
 		try {
-			full = setUpCache(path, token);
+			full = setUpCache(path, token, ri);
 		} catch (NotFoundException e) {
-			handle404(request, response);
+			logMessage(404, ri);
+			response.sendError(404);
 			return;
 		} catch (IOException e) {
-			logerr(request, response, 500, e);
+			logErr(500, e, ri);
+			response.sendError(500);
 			return;
 		} catch (ServerException e) {
-			handleWSServerError(request, response, e);
+			handleWSServerError(ri, e);
+			response.sendError(400);
 			return;
 		}
 		
 		if (!Files.isRegularFile(full)) {
-			handle404(request, response);
+			logMessage(404, ri);
+			response.sendError(404);
 			return;
 		}
 		try {
@@ -292,22 +324,19 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 				IOUtils.copy(is, response.getOutputStream());
 			}
 		} catch (IOException ioe) {
-			logthis(request.getRequestURI() + " 500 " +
-					request.getHeader(USER_AGENT), ioe);
+			logErr(500, ioe, ri);
 			response.sendError(500);
 			return;
 		}
-		logthis(request.getRequestURI() + " 200 " +
-				request.getHeader(USER_AGENT));
+		logMessage(200, ri);
 	}
 
 	private void handleWSServerError(
-			final HttpServletRequest request,
-			final HttpServletResponse response,
+			final RequestInfo ri,
 			final ServerException e)
 			throws IOException {
 		//TODO NOW test various exceptions - no such ws, obj, not authorized to ws, bad input, and handle errors better
-		logerr(request, response, 400, e);
+		logErr(400, e, ri);
 	}
 
 	private AuthToken getToken(final HttpServletRequest request)
@@ -316,7 +345,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		if (at != null && !at.trim().isEmpty()) {
 			return auth.validateToken(at);
 		}
-		System.out.println(request.getCookies());
+		System.out.println("cookies: " + request.getCookies());
 		if (request.getCookies() != null) {
 			for (final Cookie c: request.getCookies()) {
 				System.out.println(c.getName());
@@ -332,7 +361,8 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	
 	private Path setUpCache(
 			final String path,
-			final AuthToken token)
+			final AuthToken token,
+			final RequestInfo ri)
 			throws NotFoundException, IOException, ServerException {
 		final RefAndPath refAndPath = splitRefAndPath(path);
 		final String absref = getAbsoluteRef(refAndPath.ref, token);
@@ -340,6 +370,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		final Path rootpath = scratch.resolve(absref);
 		final Path filepath = rootpath.resolve(refAndPath.path);
 		if (Files.isDirectory(rootpath)) {
+			logMessage("Using cache for object " + absref, ri);
 			return filepath;
 		}
 		final String absrefSafe = absref.replace("/", "_");
@@ -349,7 +380,6 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		final Path enc = Files.createTempFile(
 				temp, "encoded." + absrefSafe + ".", ".zip.b64.tmp");
 		try (final JsonTokenStream jts = uo.getPlacedStream();) {
-			//TODO KBCOMMON JTS should allow getting an inputstream
 			jts.close();
 			jts.setRoot(Arrays.asList(
 					"result", "0", "data", "0", "data", "file"));
@@ -359,10 +389,10 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		final Path zip = Files.createTempFile(
 				temp, absrefSafe + ".", ".zip.tmp");
 		try (final OutputStream os = Files.newOutputStream(zip);
-				final InputStream is = new RemoveFirstAndLast(
-						new BufferedInputStream(Files.newInputStream(enc)),
-						Files.size(enc))) {
-			IOUtils.copy(Base64.getDecoder().wrap(is), os);
+				final InputStream is = Files.newInputStream(enc)) {
+			final InputStream iswrap = new RemoveFirstAndLast(
+					new BufferedInputStream(is), Files.size(enc));
+			IOUtils.copy(Base64.getDecoder().wrap(iswrap), os);
 		}
 		Files.delete(enc);
 		unzip(rootpath, zip);
@@ -380,7 +410,6 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			try {
 				ws = new WorkspaceClient(wsURL, token);
 			} catch (UnauthorizedException e) {
-				//TODO KBSDK remove UExp from this constructor
 				throw new RuntimeException("This is impossible, neat", e);
 			}
 		}
@@ -477,7 +506,6 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			try {
 				ws = new JsonClientCaller(wsURL, token);
 			} catch (UnauthorizedException e) {
-				//TODO KBCOMMON remove UExp from this constructor
 				throw new RuntimeException("This is impossible, neat", e);
 			}
 		}
@@ -517,12 +545,8 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		if (path.startsWith("/")) {
 			path = path.substring(1);
 		}
-		System.out.println(path);
 		final String[] s = path.split("/", 4);
 		if (s.length != 4) {
-			for (int i = 0; i < s.length; i++) {
-				System.out.println(s[i]);
-			}
 			throw new NotFoundException();
 		}
 		String ref = s[0] + "/" + s[1];
@@ -532,18 +556,12 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		return new RefAndPath(ref, Paths.get(s[3]));
 	}
 
-	private void handle404(final HttpServletRequest request,
-			final HttpServletResponse response) throws IOException {
-		logthis(request.getRequestURI() + " 404 " +
-				request.getHeader(USER_AGENT));
-		response.sendError(404);
-	}
-	
-	
-	private void logHeaders(final HttpServletRequest req) {
+	private void logHeaders(
+			final HttpServletRequest req,
+			final RequestInfo ri) {
 		final String xFF = req.getHeader(X_FORWARDED_FOR);
 		if (xFF != null && !xFF.isEmpty()) {
-			logthis(X_FORWARDED_FOR + ": " + xFF);
+			logMessage(X_FORWARDED_FOR + ": " + xFF, ri);
 		}
 	}
 	
