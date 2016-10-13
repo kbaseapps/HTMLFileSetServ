@@ -1,5 +1,6 @@
 package htmlfilesetserv;
 
+import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -40,6 +41,7 @@ import us.kbase.auth.AuthConfig;
 import us.kbase.auth.AuthException;
 import us.kbase.auth.AuthToken;
 import us.kbase.auth.ConfigurableAuthService;
+import us.kbase.common.exceptions.UnimplementedException;
 import us.kbase.common.service.JsonClientCaller;
 import us.kbase.common.service.JsonClientException;
 import us.kbase.common.service.JsonServerServlet;
@@ -48,8 +50,11 @@ import us.kbase.common.service.JsonServerSyslog.RpcInfo;
 import us.kbase.common.service.JsonServerSyslog.SyslogOutput;
 import us.kbase.common.service.JsonTokenStream;
 import us.kbase.common.service.ServerException;
+import us.kbase.common.service.Tuple11;
 import us.kbase.common.service.UObject;
 import us.kbase.common.service.UnauthorizedException;
+import us.kbase.workspace.GetObjectInfoNewParams;
+import us.kbase.workspace.ObjectSpecification;
 import us.kbase.workspace.WorkspaceClient;
 
 /** A server for the HTMLFileSet type.
@@ -322,12 +327,11 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			final String path,
 			final AuthToken token)
 			throws NotFoundException, IOException, ServerException {
-		final String ref = getWSRef(path);
-		//TODO NOW absolutize ref with get_object_info
-		//TODO NOW check correct HTMLFileSet type
-		final String absref = ref;
-		final Path filepath = Paths.get(scratch.toString() + path);
+		final RefAndPath refAndPath = splitRefAndPath(path);
+		final String absref = getAbsoluteRef(refAndPath.ref, token);
+		
 		final Path rootpath = scratch.resolve(absref);
+		final Path filepath = rootpath.resolve(refAndPath.path);
 		if (Files.isDirectory(rootpath)) {
 			return filepath;
 		}
@@ -339,20 +343,96 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 				temp, "encoded." + absrefSafe + ".", ".zip.b64.tmp");
 		try (final JsonTokenStream jts = uo.getPlacedStream();) {
 			//TODO KBCOMMON JTS should allow getting an inputstream
-			jts.setRoot(Arrays.asList("data", "0", "data", "file"));
+			jts.close();
+			jts.setRoot(Arrays.asList(
+					"result", "0", "data", "0", "data", "file"));
 			jts.writeJson(enc.toFile());
 		}
 		Files.delete(tf);
 		final Path zip = Files.createTempFile(
 				temp, absrefSafe + ".", ".zip.tmp");
 		try (final OutputStream os = Files.newOutputStream(zip);
-				final InputStream is = Files.newInputStream(enc)) {
+				final InputStream is = new RemoveFirstAndLast(
+						new BufferedInputStream(Files.newInputStream(enc)),
+						Files.size(enc))) {
 			IOUtils.copy(Base64.getDecoder().wrap(is), os);
 		}
 		Files.delete(enc);
 		unzip(rootpath, zip);
 		Files.delete(zip);
 		return filepath;
+	}
+	
+	private String getAbsoluteRef(final String ref, final AuthToken token)
+			throws IOException, ServerException {
+		
+		final WorkspaceClient ws;
+		if (token == null) {
+			ws = new WorkspaceClient(wsURL);
+		} else {
+			try {
+				ws = new WorkspaceClient(wsURL, token);
+			} catch (UnauthorizedException e) {
+				//TODO KBSDK remove UExp from this constructor
+				throw new RuntimeException("This is impossible, neat", e);
+			}
+		}
+		
+		try {
+			final Tuple11<Long, String, String, String, Long, String, Long,
+				String, String, Long, Map<String, String>> info =
+					ws.getObjectInfoNew(new GetObjectInfoNewParams()
+							.withIncludeMetadata(0L)
+							.withObjects(Arrays.asList(
+									new ObjectSpecification().withRef(ref))))
+					.get(0);
+			//TODO NOW check correct HTMLFileSet type
+			return info.getE7() + "/" + info.getE1() + "/" + info.getE5();
+		} catch (JsonClientException e) {
+			if (e instanceof ServerException) {
+				throw (ServerException) e;
+			}
+			// should never happen - indicates result couldn't be parsed
+			throw new RuntimeException("Something is very badly wrong with " +
+					"the workspace server", e);
+		}
+	}
+
+	private static class RemoveFirstAndLast extends InputStream {
+		
+		final InputStream wrapped;
+		final long size;
+		long read;
+		
+		public RemoveFirstAndLast(
+				final InputStream wrapped,
+				final long size) throws IOException {
+			this.wrapped = wrapped;
+			this.size = size;
+			wrapped.read(); // discard first byte
+			this.read = 1;
+		}
+
+		// base64 decoder only uses this method.
+		@Override
+		public int read() throws IOException {
+			if (read >= size - 1) {
+				return -1;
+			}
+			read++;
+			return wrapped.read();
+		}
+		
+		@Override
+		public int read(final byte[] b) {
+			throw new UnimplementedException();
+		}
+		
+		@Override
+		public int read(final byte[] b, final int off, final int len) {
+			throw new UnimplementedException();
+		}
+		
 	}
 
 	private void unzip(
@@ -397,7 +477,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		arg.put("objects", Arrays.asList(obj));
 		final UObject uo;
 		try {
-			uo = ws.jsonrpcCall("Workspace.get_objects2", arg,
+			uo = ws.jsonrpcCall("Workspace.get_objects2", Arrays.asList(arg),
 					new TypeReference<UObject>() {}, true, true);
 		} catch (JsonClientException e) {
 			if (e instanceof ServerException) {
@@ -409,17 +489,36 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		}
 		return uo;
 	}
+	
+	private static class RefAndPath {
+		
+		public final String ref;
+		public final Path path;
+		
+		public RefAndPath(final String ref, final Path path) {
+			super();
+			this.ref = ref;
+			this.path = path;
+		}
+	}
 
-	private String getWSRef(final String path) throws NotFoundException {
+	private RefAndPath splitRefAndPath(String path) throws NotFoundException {
+		if (path.startsWith("/")) {
+			path = path.substring(1);
+		}
+		System.out.println(path);
 		final String[] s = path.split("/", 4);
 		if (s.length != 4) {
+			for (int i = 0; i < s.length; i++) {
+				System.out.println(s[i]);
+			}
 			throw new NotFoundException();
 		}
 		String ref = s[0] + "/" + s[1];
 		if (!"-".equals(s[2])) {
 			ref += "/" + s[2];
 		}
-		return ref;
+		return new RefAndPath(ref, Paths.get(s[3]));
 	}
 
 	private void handle404(final HttpServletRequest request,
