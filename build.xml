@@ -17,6 +17,7 @@
   <property name="web.xml" location="${scripts}/web.xml"/>
   <property name="exec.cmd.file" value="run_HTMLFileSetServ_async_job.sh"/>
   <property name="startup.cmd.file" value="start_server.sh"/>
+  <property environment="env"/>
 
   <fileset dir="${jars.dir}" id="lib">
     <include name="apache_commons/commons-io-2.4.jar"/>
@@ -48,7 +49,8 @@
   </path>
 
   <target name="compile" description="compile the source">
-  	<echo>Java/JVM detail version: ${java.version}</echo> 
+    <echo>Java/JVM detail version: ${java.version}</echo>
+    <echo message="JAVA_HOME is set to ${env.JAVA_HOME}" />
     <mkdir dir="${classes}"/>
     <mkdir dir="${dist}"/>
     <exec executable="git" outputproperty="git.url"><arg line="config --get remote.origin.url"/></exec>
