@@ -8,5 +8,13 @@
         <servlet-name>JsonRpcServlet</servlet-name>
         <url-pattern>/*</url-pattern>
     </servlet-mapping>
+    <servlet>
+        <servlet-name>HTMLServlet</servlet-name>
+        <servlet-class>htmlfilesetserv.HTMLFileSetHTTPServer</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>HTMLServlet</servlet-name>
+        <url-pattern>/api/v1/*</url-pattern>
+    </servlet-mapping>
 </web-app>
 

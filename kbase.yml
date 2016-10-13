@@ -2,7 +2,7 @@ module-name:
     HTMLFileSetServ
 
 module-description:
-    A KBase module
+    HTTP server for HTMLFileSets
 
 service-language:
     java
@@ -13,3 +13,5 @@ module-version:
 owners:
     [gaprice]
 
+service-config:
+    dynamic-service: true
