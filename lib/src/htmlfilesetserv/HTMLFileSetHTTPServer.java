@@ -1,6 +1,7 @@
 package htmlfilesetserv;
 
 import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -63,10 +64,11 @@ import us.kbase.workspace.WorkspaceClient;
 @SuppressWarnings("serial")
 public class HTMLFileSetHTTPServer extends HttpServlet {
 	
-	//TODO NOW TESTS
-	//TODO NOW JAVADOC
+	//TODO TESTS
+	//TODO JAVADOC
 	//TODO NOW pass workspace ref path as parameter
 	//TODO NOW better error html page
+	//TODO ZZLATER cache reaper - need to keep date of last access in mem
 	
 	private final static String SERVICE_NAME = "HTMLFileSetServ";
 	private static final String X_FORWARDED_FOR = "X-Forwarded-For";
@@ -84,6 +86,8 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	private final Path temp;
 	private final URL wsURL;
 	private final ConfigurableAuthService auth;
+	//TODO ZZLATER may need to make this a synchronized expiring cache
+	private final Map<String, Object> locks = new HashMap<>();
 	
 	private static final String SERVER_CONTEXT_LOC = "/api/v1/*";
 	private Integer jettyPort = null;
@@ -367,35 +371,42 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		
 		final Path rootpath = scratch.resolve(absref);
 		final Path filepath = rootpath.resolve(refAndPath.path);
-		//TODO NOW synchronize (on absref?)
-		if (Files.isDirectory(rootpath)) {
-			logMessage("Using cache for object " + absref, ri);
-			return filepath;
+		synchronized (this) {
+			if (!locks.containsKey(absref)) {
+				locks.put(absref, new Object());
+			}
 		}
-		final String absrefSafe = absref.replace("/", "_");
-		final Path tf = Files.createTempFile(
-				temp, "wsobj." + absrefSafe + ".", ".json.tmp");
-		final UObject uo = saveObjectToFile(token, absref, tf);
-		final Path enc = Files.createTempFile(
-				temp, "encoded." + absrefSafe + ".", ".zip.b64.tmp");
-		try (final JsonTokenStream jts = uo.getPlacedStream();) {
-			jts.close();
-			jts.setRoot(Arrays.asList(
-					"result", "0", "data", "0", "data", "file"));
-			jts.writeJson(enc.toFile());
+		synchronized (locks.get(absref)) {
+			if (Files.isDirectory(rootpath)) {
+				logMessage("Using cache for object " + absref, ri);
+				return filepath;
+			}
+			final String absrefSafe = absref.replace("/", "_");
+			final Path tf = Files.createTempFile(
+					temp, "wsobj." + absrefSafe + ".", ".json.tmp");
+			final UObject uo = saveObjectToFile(token, absref, tf);
+			final Path enc = Files.createTempFile(
+					temp, "encoded." + absrefSafe + ".", ".zip.b64.tmp");
+			try (final JsonTokenStream jts = uo.getPlacedStream();) {
+				jts.close();
+				jts.setRoot(Arrays.asList(
+						"result", "0", "data", "0", "data", "file"));
+				jts.writeJson(enc.toFile());
+			}
+			Files.delete(tf);
+			final Path zip = Files.createTempFile(
+					temp, absrefSafe + ".", ".zip.tmp");
+			try (final OutputStream os = Files.newOutputStream(zip);
+					final InputStream is = Files.newInputStream(enc)) {
+				final InputStream iswrap = new RemoveFirstAndLast(
+						new BufferedInputStream(is), Files.size(enc));
+				IOUtils.copy(Base64.getDecoder().wrap(iswrap),
+						new BufferedOutputStream(os));
+			}
+			Files.delete(enc);
+			unzip(rootpath, zip);
+			Files.delete(zip);
 		}
-		Files.delete(tf);
-		final Path zip = Files.createTempFile(
-				temp, absrefSafe + ".", ".zip.tmp");
-		try (final OutputStream os = Files.newOutputStream(zip);
-				final InputStream is = Files.newInputStream(enc)) {
-			final InputStream iswrap = new RemoveFirstAndLast(
-					new BufferedInputStream(is), Files.size(enc));
-			IOUtils.copy(Base64.getDecoder().wrap(iswrap), os);
-		}
-		Files.delete(enc);
-		unzip(rootpath, zip);
-		Files.delete(zip);
 		return filepath;
 	}
 	
