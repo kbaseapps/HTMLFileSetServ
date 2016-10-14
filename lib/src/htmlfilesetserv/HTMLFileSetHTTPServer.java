@@ -345,10 +345,8 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		if (at != null && !at.trim().isEmpty()) {
 			return auth.validateToken(at);
 		}
-		System.out.println("cookies: " + request.getCookies());
 		if (request.getCookies() != null) {
 			for (final Cookie c: request.getCookies()) {
-				System.out.println(c.getName());
 				if (c.getName().equals("token")) {
 					return auth.validateToken(c.getValue());
 				}
@@ -369,6 +367,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		
 		final Path rootpath = scratch.resolve(absref);
 		final Path filepath = rootpath.resolve(refAndPath.path);
+		//TODO NOW synchronize (on absref?)
 		if (Files.isDirectory(rootpath)) {
 			logMessage("Using cache for object " + absref, ri);
 			return filepath;
