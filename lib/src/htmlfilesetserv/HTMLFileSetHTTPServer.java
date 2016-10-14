@@ -19,6 +19,7 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.Enumeration;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.zip.ZipEntry;
@@ -66,7 +67,6 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	
 	//TODO TESTS
 	//TODO JAVADOC
-	//TODO NOW pass workspace ref path as parameter
 	//TODO NOW better error html page
 	//TODO ZZLATER cache reaper - need to keep date of last access in mem
 	
@@ -181,8 +181,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	private void logErr(
 			final int code,
 			final Throwable error,
-			final RequestInfo ri)
-			throws IOException {
+			final RequestInfo ri) {
 		final String se;
 		if (error instanceof ServerException) {
 			final ServerException serv = (ServerException) error;
@@ -299,11 +298,15 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		if (path.endsWith("/")) { // e.g. /docs/
 			path = path + "index.html";
 		}
+
+		final String[] refpaths = request.getParameterValues("refpath");
+		final String refpath = refpaths == null || refpaths.length == 0 ?
+				null : refpaths[0];
 		// the path is already normalized by the framework, so no need to
 		// normalize here
 		final Path full;
 		try {
-			full = setUpCache(path, token, ri);
+			full = setUpCache(path, token, ri, refpath);
 		} catch (NotFoundException e) {
 			logMessage(404, ri);
 			response.sendError(404);
@@ -337,9 +340,8 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 
 	private void handleWSServerError(
 			final RequestInfo ri,
-			final ServerException e)
-			throws IOException {
-		//TODO NOW test various exceptions - no such ws, obj, not authorized to ws, bad input, and handle errors better
+			final ServerException e) {
+		//TODO NOW check various exceptions - no such ws, obj, not authorized to ws, bad input, and handle errors better
 		logErr(400, e, ri);
 	}
 
@@ -364,10 +366,21 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	private Path setUpCache(
 			final String path,
 			final AuthToken token,
-			final RequestInfo ri)
+			final RequestInfo ri,
+			final String refpath)
 			throws NotFoundException, IOException, ServerException {
 		final RefAndPath refAndPath = splitRefAndPath(path);
-		final String absref = getAbsoluteRef(refAndPath.ref, token);
+		final List<String> refpathlist;
+		if (refpath == null) {
+			refpathlist = null;
+		} else {
+			refpathlist = Arrays.asList(refpath.split(","));
+			for (int i = 0; i < refpathlist.size(); i++) {
+				refpathlist.set(i, refpathlist.get(i).trim());
+			}
+		}
+		final String absref = getAbsoluteRef(refAndPath.ref, token,
+				refpathlist);
 		
 		final Path rootpath = scratch.resolve(absref);
 		final Path filepath = rootpath.resolve(refAndPath.path);
@@ -384,7 +397,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			final String absrefSafe = absref.replace("/", "_");
 			final Path tf = Files.createTempFile(
 					temp, "wsobj." + absrefSafe + ".", ".json.tmp");
-			final UObject uo = saveObjectToFile(token, absref, tf);
+			final UObject uo = saveObjectToFile(token, absref, tf, refpathlist);
 			final Path enc = Files.createTempFile(
 					temp, "encoded." + absrefSafe + ".", ".zip.b64.tmp");
 			try (final JsonTokenStream jts = uo.getPlacedStream();) {
@@ -396,12 +409,12 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			Files.delete(tf);
 			final Path zip = Files.createTempFile(
 					temp, absrefSafe + ".", ".zip.tmp");
-			try (final OutputStream os = Files.newOutputStream(zip);
+			try (final OutputStream os = new BufferedOutputStream(
+						Files.newOutputStream(zip));
 					final InputStream is = Files.newInputStream(enc)) {
 				final InputStream iswrap = new RemoveFirstAndLast(
 						new BufferedInputStream(is), Files.size(enc));
-				IOUtils.copy(Base64.getDecoder().wrap(iswrap),
-						new BufferedOutputStream(os));
+				IOUtils.copy(Base64.getDecoder().wrap(iswrap), os);
 			}
 			Files.delete(enc);
 			unzip(rootpath, zip);
@@ -410,7 +423,10 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		return filepath;
 	}
 	
-	private String getAbsoluteRef(final String ref, final AuthToken token)
+	private String getAbsoluteRef(
+			final String ref,
+			final AuthToken token,
+			final List<String> refpathlist)
 			throws IOException, ServerException {
 		
 		final WorkspaceClient ws;
@@ -425,12 +441,13 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		}
 		
 		try {
+			final ObjectSpecification os = buildObjectSpecification(
+					ref, refpathlist);
 			final Tuple11<Long, String, String, String, Long, String, Long,
 				String, String, Long, Map<String, String>> info =
 					ws.getObjectInfoNew(new GetObjectInfoNewParams()
 							.withIncludeMetadata(0L)
-							.withObjects(Arrays.asList(
-									new ObjectSpecification().withRef(ref))))
+							.withObjects(Arrays.asList(os)))
 					.get(0);
 			if (!info.getE3().startsWith(TYPE_HTMLFILSET)) {
 				throw new ServerException(String.format(
@@ -446,6 +463,22 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			throw new RuntimeException("Something is very badly wrong with " +
 					"the workspace server", e);
 		}
+	}
+
+	private ObjectSpecification buildObjectSpecification(
+			final String ref,
+			final List<String> refpathlist) {
+		final ObjectSpecification os = new ObjectSpecification();
+		if (refpathlist != null) {
+			os.withRef(refpathlist.get(0));
+			final List<String> newpath = new LinkedList<>();
+			newpath.addAll(refpathlist.subList(1, refpathlist.size()));
+			newpath.add(ref);
+			os.withObjRefPath(newpath);
+		} else {
+			os.withRef(ref);
+		}
+		return os;
 	}
 
 	private static class RemoveFirstAndLast extends InputStream {
@@ -507,7 +540,8 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	private UObject saveObjectToFile(
 			final AuthToken token,
 			final String absref,
-			final Path tempfile)
+			final Path tempfile,
+			final List<String> refpathlist)
 			throws IOException, ServerException {
 		final JsonClientCaller ws;
 		if (token == null) {
@@ -520,10 +554,9 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			}
 		}
 		ws.setFileForNextRpcResponse(tempfile.toFile());
-		final Map<String, List<Map<String, String>>> arg = new HashMap<>();
-		final Map<String, String> obj = new HashMap<>();
-		obj.put("ref", absref);
-		arg.put("objects", Arrays.asList(obj));
+		final Map<String, List<ObjectSpecification>> arg = new HashMap<>();
+		arg.put("objects", Arrays.asList(buildObjectSpecification(
+				absref, refpathlist)));
 		final UObject uo;
 		try {
 			uo = ws.jsonrpcCall("Workspace.get_objects2", Arrays.asList(arg),
