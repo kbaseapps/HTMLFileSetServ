@@ -195,19 +195,20 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		}
 		final ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		error.printStackTrace(new PrintStream(baos));
-		logMessage(String.format("%s %s %s %s %s%s%s", ri.path, code,
-				ri.ipAddress, ri.requestID, ri.userAgent, se, "\n" +
-				new String(baos.toByteArray(), StandardCharsets.UTF_8)));
+		logMessage(String.format("%s %s %s %s %s %s%s%s", ri.path, code,
+				ri.userName, ri.ipAddress, ri.requestID, ri.userAgent, se,
+				"\n" + new String(baos.toByteArray(),
+						StandardCharsets.UTF_8)));
 	}
 	
 	private void logMessage(final String message, final RequestInfo ri) {
-		logMessage(String.format("%s %s %s", message, ri.ipAddress,
+		logMessage(String.format("%s %s %s", message, ri.userName,
 				ri.requestID));
 	}
 	
 	private void logMessage(final int code, final RequestInfo ri) {
-		logMessage(String.format("%s %s %s %s %s", ri.path, code, ri.ipAddress,
-				ri.requestID, ri.userAgent));
+		logMessage(String.format("%s %s %s %s %s %s", ri.path, code,
+				ri.userName, ri.ipAddress, ri.requestID, ri.userAgent));
 	}
 	
 	private void logMessage(final String message) {
@@ -245,16 +246,19 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	
 	private class RequestInfo {
 		
+		public final String userName;
 		public final String ipAddress;
 		public final String path;
 		public final String userAgent;
 		public final String requestID;
 		
 		public RequestInfo(
+				final String userName,
 				final String ipAddress,
 				final String userAgent,
 				final String path) {
 			super();
+			this.userName = userName;
 			this.ipAddress = ipAddress;
 			this.userAgent = userAgent;
 			this.path = path;
@@ -268,25 +272,26 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			final HttpServletResponse response)
 			throws ServletException, IOException {
 		
-		final RequestInfo ri = new RequestInfo(
-				JsonServerServlet.getIpAddress(request, config),
-				request.getHeader(USER_AGENT),
-				request.getRequestURI());
-
-		logHeaders(request, ri);
+		final RequestInfo ri;
 	
 		final AuthToken token;
 		try {
 			token = getToken(request);
+			ri = buildRequestInfo(request, token.getUserName());
 		} catch (AuthException e) {
-			logErr(401, e, ri);
+			final RequestInfo ri2 = buildRequestInfo(request, "-");
+			logHeaders(request, ri2);
+			logErr(401, e, ri2);
 			response.sendError(401);
 			return;
 		} catch (IOException e) {
-			logErr(500, e, ri);
+			final RequestInfo ri2 = buildRequestInfo(request, "-");
+			logHeaders(request, ri2);
+			logErr(500, e, ri2);
 			response.sendError(500);
 			return;
 		}
+		logHeaders(request, ri);
 		
 		String path = request.getPathInfo();
 		
@@ -336,6 +341,16 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			return;
 		}
 		logMessage(200, ri);
+	}
+
+	private RequestInfo buildRequestInfo(
+			final HttpServletRequest request,
+			final String userName) {
+		return new RequestInfo(
+				userName,
+				JsonServerServlet.getIpAddress(request, config),
+				request.getHeader(USER_AGENT),
+				request.getRequestURI());
 	}
 
 	private void handleWSServerError(
