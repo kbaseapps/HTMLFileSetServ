@@ -37,6 +37,7 @@
     <include name="slf4j/slf4j-api-1.7.7.jar"/>
     <include name="syslog4j/syslog4j-0.9.46.jar"/>
     <include name="kbase/workspace/WorkspaceService-0.5.0.jar"/>
+    <include name="mustache/compiler-0.9.3.jar"/>
   </fileset>
 
   <path id="compile.classpath">

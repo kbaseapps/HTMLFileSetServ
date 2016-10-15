@@ -17,6 +17,7 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.Date;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -38,6 +39,9 @@ import org.eclipse.jetty.servlet.ServletHolder;
 import org.productivity.java.syslog4j.SyslogIF;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.github.mustachejava.DefaultMustacheFactory;
+import com.github.mustachejava.Mustache;
+import com.github.mustachejava.MustacheFactory;
 
 import us.kbase.auth.AuthConfig;
 import us.kbase.auth.AuthException;
@@ -67,8 +71,9 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	
 	//TODO TESTS
 	//TODO JAVADOC
-	//TODO NOW better error html page
 	//TODO ZZLATER cache reaper - need to keep date of last access in mem
+	//TODO EXTERNAL dynamic service logs should be restricted to admins
+	//TODO EXTERNAL dyanmic services should have data mounts
 	
 	private final static String SERVICE_NAME = "HTMLFileSetServ";
 	private static final String X_FORWARDED_FOR = "X-Forwarded-For";
@@ -77,18 +82,31 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	private static final String CFG_WS_URL = "workspace-url";
 	private static final String CFG_AUTH_URL = "auth-service-url";
 	private static final String TEMP_DIR = "temp";
+	private static final String ERROR_PAGE_PACKAGE = "htmlfilesetserv";
+	private static final String ERROR_PAGE_NAME = "error.mustache";
 	
 	private static final String TYPE_HTMLFILSET =
 			"HTMLFileSetUtils.HTMLFileSet";
 	
+	
+	private static final Map<Integer, String> codeToLine = new HashMap<>();
+	static {
+		codeToLine.put(400, "Bad Request");
+		codeToLine.put(401, "Unauthorized");
+		codeToLine.put(403, "Forbidden");
+		codeToLine.put(404, "Not Found");
+		codeToLine.put(500, "Internal Server Error");
+	}
+		
 	private final Map<String, String> config;
 	private final Path scratch;
 	private final Path temp;
 	private final URL wsURL;
 	private final ConfigurableAuthService auth;
+	private final Mustache template;
 	//TODO ZZLATER may need to make this a synchronized expiring cache
 	private final Map<String, Object> locks = new HashMap<>();
-	
+
 	private static final String SERVER_CONTEXT_LOC = "/api/v1/*";
 	private Integer jettyPort = null;
 	private Server jettyServer = null;
@@ -120,20 +138,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		Files.createDirectories(this.temp);
 		logString("Using directory " + this.scratch + " for cache");
 		
-		final String wsURL = config.get(CFG_WS_URL);
-		if (wsURL == null || wsURL.trim().isEmpty()) {
-			throw new ConfigurationException(
-					"Illegal workspace url: " + wsURL);
-		}
-		try {
-			this.wsURL = new URL(wsURL);
-		} catch (MalformedURLException e) {
-			throw new ConfigurationException(
-					"Illegal workspace url: " + wsURL, e);
-		}
-		final WorkspaceClient ws = new WorkspaceClient(this.wsURL);
-		logString(String.format("Contacted workspace version %s at %s",
-				ws.ver(), this.wsURL));
+		this.wsURL = getWorkspaceURL();
 		
 		final AuthConfig acf = new AuthConfig();
 		final String authURL = config.get(CFG_AUTH_URL);
@@ -146,6 +151,31 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			}
 		}
 		auth = new ConfigurableAuthService(acf);
+		
+		final MustacheFactory mf = new DefaultMustacheFactory(
+				ERROR_PAGE_PACKAGE);
+		template = mf.compile(ERROR_PAGE_NAME);
+	}
+
+	private URL getWorkspaceURL()
+			throws ConfigurationException, IOException,
+			JsonClientException {
+		final String wsURL = config.get(CFG_WS_URL);
+		if (wsURL == null || wsURL.trim().isEmpty()) {
+			throw new ConfigurationException(
+					"Illegal workspace url: " + wsURL);
+		}
+		final URL url;
+		try {
+			url = new URL(wsURL);
+		} catch (MalformedURLException e) {
+			throw new ConfigurationException(
+					"Illegal workspace url: " + wsURL, e);
+		}
+		final WorkspaceClient ws = new WorkspaceClient(url);
+		logString(String.format("Contacted workspace version %s at %s",
+				ws.ver(), url));
+		return url;
 	}
 	
 	public static void stfuLoggers() {
@@ -153,7 +183,6 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 				.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME))
 			.setLevel(ch.qos.logback.classic.Level.OFF);
 	}
-	
 
 	private Map<String, String> getConfig() throws ConfigurationException {
 		final JsonServerSyslog logger = new JsonServerSyslog(
@@ -277,18 +306,17 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		final AuthToken token;
 		try {
 			token = getToken(request);
-			ri = buildRequestInfo(request, token.getUserName());
+			final String user = token == null ? "-" : token.getUserName();
+			ri = buildRequestInfo(request, user);
 		} catch (AuthException e) {
 			final RequestInfo ri2 = buildRequestInfo(request, "-");
 			logHeaders(request, ri2);
-			logErr(401, e, ri2);
-			response.sendError(401);
+			handleErr(401, e, ri2, response);
 			return;
 		} catch (IOException e) {
 			final RequestInfo ri2 = buildRequestInfo(request, "-");
 			logHeaders(request, ri2);
-			logErr(500, e, ri2);
-			response.sendError(500);
+			handleErr(500, e, ri2, response);
 			return;
 		}
 		logHeaders(request, ri);
@@ -296,8 +324,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		String path = request.getPathInfo();
 		
 		if (path == null || path.trim().isEmpty()) { // e.g. /api/v1
-			logMessage(404, ri);
-			response.sendError(404);
+			handleErr(404, "Not Found", ri, response);
 			return;
 		}
 		if (path.endsWith("/")) { // e.g. /docs/
@@ -313,22 +340,18 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		try {
 			full = setUpCache(path, token, ri, refpath);
 		} catch (NotFoundException e) {
-			logMessage(404, ri);
-			response.sendError(404);
+			handleErr(404, "Not Found", ri, response);
 			return;
 		} catch (IOException e) {
-			logErr(500, e, ri);
-			response.sendError(500);
+			handleErr(500, e, ri, response);
 			return;
 		} catch (ServerException e) {
-			handleWSServerError(ri, e);
-			response.sendError(400);
+			handleWSServerError(ri, e, response);
 			return;
 		}
 		
 		if (!Files.isRegularFile(full)) {
-			logMessage(404, ri);
-			response.sendError(404);
+			handleErr(404, "Not Found", ri, response);
 			return;
 		}
 		try {
@@ -336,11 +359,49 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 				IOUtils.copy(is, response.getOutputStream());
 			}
 		} catch (IOException ioe) {
-			logErr(500, ioe, ri);
-			response.sendError(500);
+			handleErr(500, ioe, ri, response);
 			return;
 		}
 		logMessage(200, ri);
+	}
+
+	private void handleErr(
+			final int code,
+			// might want to have a string to override the throwable error
+			// message?
+			final Throwable error,
+			final RequestInfo ri,
+			final HttpServletResponse response) throws IOException {
+		logErr(code, error, ri);
+		response.setStatus(code);
+		writeErrorPage(code, error.getMessage(), ri, response);
+	}
+	
+	private void handleErr(
+			final int code,
+			// might want to have a string to override the throwable error
+			// message?
+			final String error,
+			final RequestInfo ri,
+			final HttpServletResponse response) throws IOException {
+		logMessage(code, ri);
+		response.setStatus(code);
+		writeErrorPage(code, error, ri, response);
+	}
+
+	private void writeErrorPage(
+			final int code,
+			final String error,
+			final RequestInfo ri,
+			final HttpServletResponse response)
+			throws IOException {
+		final Map<String, Object> model = new HashMap<>();
+		model.put("callID", ri.requestID);
+		model.put("time", new Date().getTime());
+		model.put("httpCode", code);
+		model.put("httpStatus", codeToLine.get(code));
+		model.put("message", error);
+		template.execute(response.getWriter(), model);
 	}
 
 	private RequestInfo buildRequestInfo(
@@ -355,9 +416,10 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 
 	private void handleWSServerError(
 			final RequestInfo ri,
-			final ServerException e) {
+			final ServerException e,
+			final HttpServletResponse response) throws IOException {
 		//TODO NOW check various exceptions - no such ws, obj, not authorized to ws, bad input, and handle errors better
-		logErr(400, e, ri);
+		handleErr(400, e, ri, response);
 	}
 
 	private AuthToken getToken(final HttpServletRequest request)
