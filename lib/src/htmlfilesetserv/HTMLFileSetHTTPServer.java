@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintStream;
+import java.io.Writer;
 import java.net.MalformedURLException;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -17,6 +18,7 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.Date;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -69,6 +71,8 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	//TODO JAVADOC
 	//TODO NOW better error html page
 	//TODO ZZLATER cache reaper - need to keep date of last access in mem
+	//TODO EXTERNAL dynamic service logs should be restricted to admins
+	//TODO EXTERNAL dyanmic services should have data mounts
 	
 	private final static String SERVICE_NAME = "HTMLFileSetServ";
 	private static final String X_FORWARDED_FOR = "X-Forwarded-For";
@@ -277,18 +281,17 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		final AuthToken token;
 		try {
 			token = getToken(request);
-			ri = buildRequestInfo(request, token.getUserName());
+			final String user = token == null ? "-" : token.getUserName();
+			ri = buildRequestInfo(request, user);
 		} catch (AuthException e) {
 			final RequestInfo ri2 = buildRequestInfo(request, "-");
 			logHeaders(request, ri2);
-			logErr(401, e, ri2);
-			response.sendError(401);
+			handleErr(401, e, ri2, response);
 			return;
 		} catch (IOException e) {
 			final RequestInfo ri2 = buildRequestInfo(request, "-");
 			logHeaders(request, ri2);
-			logErr(500, e, ri2);
-			response.sendError(500);
+			handleErr(500, e, ri2, response);
 			return;
 		}
 		logHeaders(request, ri);
@@ -296,8 +299,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		String path = request.getPathInfo();
 		
 		if (path == null || path.trim().isEmpty()) { // e.g. /api/v1
-			logMessage(404, ri);
-			response.sendError(404);
+			handleErr(404, "Not Found", ri, response);
 			return;
 		}
 		if (path.endsWith("/")) { // e.g. /docs/
@@ -313,22 +315,18 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		try {
 			full = setUpCache(path, token, ri, refpath);
 		} catch (NotFoundException e) {
-			logMessage(404, ri);
-			response.sendError(404);
+			handleErr(404, "Not Found", ri, response);
 			return;
 		} catch (IOException e) {
-			logErr(500, e, ri);
-			response.sendError(500);
+			handleErr(500, e, ri, response);
 			return;
 		} catch (ServerException e) {
-			handleWSServerError(ri, e);
-			response.sendError(400);
+			handleWSServerError(ri, e, response);
 			return;
 		}
 		
 		if (!Files.isRegularFile(full)) {
-			logMessage(404, ri);
-			response.sendError(404);
+			handleErr(404, "Not Found", ri, response);
 			return;
 		}
 		try {
@@ -336,11 +334,47 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 				IOUtils.copy(is, response.getOutputStream());
 			}
 		} catch (IOException ioe) {
-			logErr(500, ioe, ri);
-			response.sendError(500);
+			handleErr(500, ioe, ri, response);
 			return;
 		}
 		logMessage(200, ri);
+	}
+
+	private void handleErr(
+			final int code,
+			// might want to have a string to override the throwable error
+			// message?
+			final Throwable error,
+			final RequestInfo ri,
+			final HttpServletResponse response) throws IOException {
+		logErr(code, error, ri);
+		response.setStatus(code);
+		writeErrorPage(error.getMessage(), ri, response);
+	}
+	
+	private void handleErr(
+			final int code,
+			// might want to have a string to override the throwable error
+			// message?
+			final String error,
+			final RequestInfo ri,
+			final HttpServletResponse response) throws IOException {
+		logMessage(code, ri);
+		response.setStatus(code);
+		writeErrorPage(error, ri, response);
+	}
+
+	private void writeErrorPage(
+			final String error,
+			final RequestInfo ri,
+			final HttpServletResponse response)
+			throws IOException {
+		final Writer w = response.getWriter();
+		w.write("Sorry, an error occurred:\n");
+		w.write(error + "\n");
+		w.write("Timestamp: " + new Date().getTime() + "\n");
+		w.write("Request ID: " + ri.requestID + "\n");
+		// TODO NOW make this a mustache page
 	}
 
 	private RequestInfo buildRequestInfo(
@@ -355,9 +389,10 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 
 	private void handleWSServerError(
 			final RequestInfo ri,
-			final ServerException e) {
+			final ServerException e,
+			final HttpServletResponse response) throws IOException {
 		//TODO NOW check various exceptions - no such ws, obj, not authorized to ws, bad input, and handle errors better
-		logErr(400, e, ri);
+		handleErr(400, e, ri, response);
 	}
 
 	private AuthToken getToken(final HttpServletRequest request)
