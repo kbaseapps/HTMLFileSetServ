@@ -418,8 +418,19 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			final RequestInfo ri,
 			final ServerException e,
 			final HttpServletResponse response) throws IOException {
-		//TODO NOW check various exceptions - no such ws, obj, not authorized to ws, bad input, and handle errors better
-		handleErr(400, e, ri, response);
+		int code = 400;
+		if (e.getMessage().contains("may not read")) {
+			code = 403;
+		} else if (e.getMessage().contains("with name")) {
+			code = 404;
+		}
+		String err = e.getMessage();
+		if (err.contains("ObjectSpecification")) {
+			err = err.split(":")[1];
+		}
+		logErr(code, e, ri);
+		response.setStatus(code);
+		writeErrorPage(code, err, ri, response);
 	}
 
 	private AuthToken getToken(final HttpServletRequest request)
