@@ -63,6 +63,17 @@ import us.kbase.workspace.ObjectSpecification;
 import us.kbase.workspace.WorkspaceClient;
 
 /** A server for the HTMLFileSet type.
+ * 
+ * Risks:
+ * This service serves arbitrary files from the KBase stores, and any
+ * user can save data to the KBase stores. This means that said user can
+ * submit malicious code to KBase and have that code served up under the
+ * KBase namespace.
+ * It may be worthwhile to restrict creation privileges to specified users,
+ * but based on the understanding of the use case this is not workable.
+ * Caja (https://developers.google.com/caja/) might be useful for protecting
+ * any front end widgets.
+ * 
  * @author gaprice@lbl.gov
  *
  */
@@ -70,10 +81,12 @@ import us.kbase.workspace.WorkspaceClient;
 public class HTMLFileSetHTTPServer extends HttpServlet {
 	
 	//TODO TESTS
-	//TODO JAVADOC
 	//TODO ZZLATER cache reaper - need to keep date of last access in mem
-	//TODO EXTERNAL dynamic service logs should be restricted to admins
-	//TODO EXTERNAL dyanmic services should have data mounts
+	//TODO ZZEXTERNAL dynamic service logs should be restricted to admins
+	//TODO ZZEXTERNAL dynamic services should have data mounts
+	//TODO ZZEXTERNAL UI guys / thomason help with error page
+	//TODO ZZEXTERNAL BLOCKER Rancher passes on path
+	//TODO ZZEXTERNAL BLOCKER red team Report definition
 	
 	private final static String SERVICE_NAME = "HTMLFileSetServ";
 	private static final String X_FORWARDED_FOR = "X-Forwarded-For";
@@ -178,7 +191,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		return url;
 	}
 	
-	public static void stfuLoggers() {
+	private static void stfuLoggers() {
 		((ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory
 				.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME))
 			.setLevel(ch.qos.logback.classic.Level.OFF);
