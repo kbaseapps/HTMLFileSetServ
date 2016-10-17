@@ -1,8 +1,6 @@
 package htmlfilesetserv.test;
 
 import java.io.File;
-import java.io.IOException;
-import java.net.UnknownHostException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Map;
@@ -19,10 +17,10 @@ import org.junit.Test;
 import com.mongodb.DB;
 import com.mongodb.MongoClient;
 
+import htmlfilesetserv.HTMLFileSetHTTPServer;
 import us.kbase.auth.AuthToken;
 import us.kbase.auth.AuthService;
 import us.kbase.common.mongo.GetMongoDB;
-import us.kbase.common.mongo.exceptions.InvalidHostException;
 import us.kbase.common.service.JsonServerSyslog;
 import us.kbase.common.test.TestCommon;
 import us.kbase.common.test.controllers.mongo.MongoController;
@@ -43,7 +41,8 @@ public class HTMLFileSetServServerTest {
 	private static Path SCRATCH;
 	private static MongoController mongo;
 	private static WorkspaceServer WS_SERVER;
-
+	private static HTMLFileSetHTTPServer HTML_SERVER;
+	
 	@BeforeClass
 	public static void init() throws Exception {
 		TestCommon.stfuLoggers();
@@ -57,6 +56,12 @@ public class HTMLFileSetServServerTest {
 		config = ini.get("HTMLFileSetServ");
 		SCRATCH = Paths.get(config.get("scratch"));
 		
+		// These lines are necessary because we don't want to start linux
+		// syslog bridge service
+		JsonServerSyslog.setStaticUseSyslog(false);
+		JsonServerSyslog.setStaticMlogFile(
+				new File(config.get("scratch"), "test.log").getAbsolutePath());
+
 		mongo = new MongoController(MONGO_PATH, SCRATCH.resolve("tempmongo"));
 		System.out.println("Using mongo temp dir " + mongo.getTempDir());
 		
@@ -65,23 +70,74 @@ public class HTMLFileSetServServerTest {
 		
 		final DB db = mongoClient.getDB(WS_DB);
 		WS_SERVER = startupWorkspaceServer(mongohost, db, TYPE_DB, token);
-		int port = WS_SERVER.getServerPort();
-		System.out.println("Started test server 1 on port " + port);
-		
-		// These lines are necessary because we don't want to start linux syslog bridge service
-		JsonServerSyslog.setStaticUseSyslog(false);
-		JsonServerSyslog.setStaticMlogFile(new File(config.get("scratch"), "test.log").getAbsolutePath());
 		mongoClient.close();
+		int wsport = WS_SERVER.getServerPort();
+		System.out.println("Started ws server on port " + wsport);
+		
+		HTML_SERVER = startupHTMLServer("http://localhost:" + wsport);
+		int htmlport = HTML_SERVER.getServerPort();
+		System.out.println("Started html server on port " + htmlport);
 	}
+	
+	private static HTMLFileSetHTTPServer startupHTMLServer(
+			final String wsURL)
+			throws Exception {
+		
+		//write the server config file:
+		File iniFile = File.createTempFile("test", ".cfg",
+				new File(SCRATCH.toString()));
+		if (iniFile.exists()) {
+			iniFile.delete();
+		}
+		System.out.println("Created HTML serv temporary config file: " +
+				iniFile.getAbsolutePath());
+		Ini ini = new Ini();
+		Section html = ini.add("HTMLFileSetServ");
+		html.add("workspace-url", wsURL);
+		html.add("scratch", SCRATCH);
+		//TODO TEST make auth url configurable
+		html.add("auth-service-url",
+				"https://ci.kbase.us/services/authorization");
+		ini.store(iniFile);
+		iniFile.deleteOnExit();
+
+		//set up env
+		Map<String, String> env = TestCommon.getenv();
+		env.put("KB_DEPLOYMENT_CONFIG", iniFile.getAbsolutePath());
+
+		HTMLFileSetHTTPServer server = new HTMLFileSetHTTPServer();
+		new HTMLServerThread(server).start();
+		System.out.println("Main thread waiting for html server to start up");
+		while (server.getServerPort() == null) {
+			Thread.sleep(1000);
+		}
+		return server;
+	}
+
+	protected static class HTMLServerThread extends Thread {
+		private HTMLFileSetHTTPServer server;
+		
+		protected HTMLServerThread(HTMLFileSetHTTPServer server) {
+			this.server = server;
+		}
+		
+		public void run() {
+			try {
+				server.startupServer();
+			} catch (Exception e) {
+				System.err.println("Can't start server:");
+				e.printStackTrace();
+			}
+		}
+	}
+	
 	
 	private static WorkspaceServer startupWorkspaceServer(
 			final String mongohost,
 			final DB db,
 			final String typedb,
 			final AuthToken t)
-			throws InvalidHostException, UnknownHostException, IOException,
-			NoSuchFieldException, IllegalAccessException, Exception,
-			InterruptedException {
+			throws Exception {
 		WorkspaceTestCommon.initializeGridFSWorkspaceDB(db, typedb);
 		
 		//write the server config file:
@@ -90,7 +146,7 @@ public class HTMLFileSetServServerTest {
 		if (iniFile.exists()) {
 			iniFile.delete();
 		}
-		System.out.println("Created temporary config file: " +
+		System.out.println("Created WS temporary config file: " +
 				iniFile.getAbsolutePath());
 		Ini ini = new Ini();
 		Section ws = ini.add("Workspace");
@@ -113,11 +169,10 @@ public class HTMLFileSetServServerTest {
 		//set up env
 		Map<String, String> env = TestCommon.getenv();
 		env.put("KB_DEPLOYMENT_CONFIG", iniFile.getAbsolutePath());
-		env.put("KB_SERVICE_NAME", "Workspace");
 
 		WorkspaceServer.clearConfigForTests();
 		WorkspaceServer server = new WorkspaceServer();
-		new ServerThread(server).start();
+		new WSServerThread(server).start();
 		System.out.println("Main thread waiting for server to start up");
 		while (server.getServerPort() == null) {
 			Thread.sleep(1000);
@@ -125,10 +180,10 @@ public class HTMLFileSetServServerTest {
 		return server;
 	}
 	
-	protected static class ServerThread extends Thread {
+	protected static class WSServerThread extends Thread {
 		private WorkspaceServer server;
 		
-		protected ServerThread(WorkspaceServer server) {
+		protected WSServerThread(WorkspaceServer server) {
 			this.server = server;
 		}
 		
@@ -144,6 +199,11 @@ public class HTMLFileSetServServerTest {
 	
 	@AfterClass
 	public static void tearDownClass() throws Exception {
+		if (HTML_SERVER != null) {
+			System.out.print("Killing html server ... ");
+			HTML_SERVER.stopServer();
+			System.out.println("Done");
+		}
 		if (WS_SERVER != null) {
 			System.out.print("Killing ws server ... ");
 			WS_SERVER.stopServer();
