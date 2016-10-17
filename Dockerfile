@@ -18,13 +18,7 @@ RUN add-apt-repository ppa:openjdk-r/ppa \
 	&& cd /kb/runtime \
 	&& rm java \
 	&& ln -s /usr/lib/jvm/java-8-openjdk-amd64 java \
-	&& ls -l \
-	&& cd /opt \
-	&& mkdir mongo \
-	&& cd mongo \
-	&& curl -O https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-2.4.14.tgz \
-	&& tar -zxvf mongodb-linux-x86_64-2.4.14.tgz \
-	&& ln -s mongodb-linux-x86_64-2.4.14/bin 2.4.14
+	&& ls -l
 
 ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64
 

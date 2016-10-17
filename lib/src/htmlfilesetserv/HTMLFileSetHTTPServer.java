@@ -81,11 +81,11 @@ import us.kbase.workspace.WorkspaceClient;
 public class HTMLFileSetHTTPServer extends HttpServlet {
 	
 	//TODO TESTS
+	//TODO NOW the reference path won't work. Has to be a part of the path or links in the zip file will break
 	//TODO ZZLATER cache reaper - need to keep date of last access in mem
+	//TODO ZZLATER UI guys / thomason help with error page - defer indefinitely per Bill
 	//TODO ZZEXTERNAL dynamic service logs should be restricted to admins
 	//TODO ZZEXTERNAL dynamic services should have data mounts
-	//TODO ZZEXTERNAL docker doesn't stop after test due to mongod not stopping
-	//TODO ZZEXTERNAL UI guys / thomason help with error page
 	//TODO ZZEXTERNAL BLOCKER Rancher passes on path
 	//TODO ZZEXTERNAL BLOCKER red team Report definition
 	
