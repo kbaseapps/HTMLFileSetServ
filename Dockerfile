@@ -18,7 +18,7 @@ RUN add-apt-repository ppa:openjdk-r/ppa \
 	&& cd /kb/runtime \
 	&& rm java \
 	&& ln -s /usr/lib/jvm/java-8-openjdk-amd64 java \
-	&& ls -l 
+	&& ls -l
 
 ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64
 

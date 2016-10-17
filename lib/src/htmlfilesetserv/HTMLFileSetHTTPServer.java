@@ -63,6 +63,17 @@ import us.kbase.workspace.ObjectSpecification;
 import us.kbase.workspace.WorkspaceClient;
 
 /** A server for the HTMLFileSet type.
+ * 
+ * Risks:
+ * This service serves arbitrary files from the KBase stores, and any
+ * user can save data to the KBase stores. This means that said user can
+ * submit malicious code to KBase and have that code served up under the
+ * KBase namespace.
+ * It may be worthwhile to restrict creation privileges to specified users,
+ * but based on the understanding of the use case this is not workable.
+ * Caja (https://developers.google.com/caja/) might be useful for protecting
+ * any front end widgets.
+ * 
  * @author gaprice@lbl.gov
  *
  */
@@ -70,10 +81,12 @@ import us.kbase.workspace.WorkspaceClient;
 public class HTMLFileSetHTTPServer extends HttpServlet {
 	
 	//TODO TESTS
-	//TODO JAVADOC
 	//TODO ZZLATER cache reaper - need to keep date of last access in mem
-	//TODO EXTERNAL dynamic service logs should be restricted to admins
-	//TODO EXTERNAL dyanmic services should have data mounts
+	//TODO ZZLATER UI guys / thomason help with error page - defer indefinitely per Bill
+	//TODO ZZEXTERNAL dynamic service logs should be restricted to admins
+	//TODO ZZEXTERNAL dynamic services should have data mounts
+	//TODO ZZEXTERNAL BLOCKER Rancher passes on path
+	//TODO ZZEXTERNAL BLOCKER red team Report definition
 	
 	private final static String SERVICE_NAME = "HTMLFileSetServ";
 	private static final String X_FORWARDED_FOR = "X-Forwarded-For";
@@ -178,7 +191,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		return url;
 	}
 	
-	public static void stfuLoggers() {
+	private static void stfuLoggers() {
 		((ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory
 				.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME))
 			.setLevel(ch.qos.logback.classic.Level.OFF);
@@ -331,14 +344,11 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			path = path + "index.html";
 		}
 
-		final String[] refpaths = request.getParameterValues("refpath");
-		final String refpath = refpaths == null || refpaths.length == 0 ?
-				null : refpaths[0];
 		// the path is already normalized by the framework, so no need to
 		// normalize here
-		final Path full;
+		final Path local;
 		try {
-			full = setUpCache(path, token, ri, refpath);
+			local = setUpCache(path, token, ri);
 		} catch (NotFoundException e) {
 			handleErr(404, "Not Found", ri, response);
 			return;
@@ -350,12 +360,12 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			return;
 		}
 		
-		if (!Files.isRegularFile(full)) {
+		if (!Files.isRegularFile(local)) {
 			handleErr(404, "Not Found", ri, response);
 			return;
 		}
 		try {
-			try (final InputStream is = Files.newInputStream(full)) {
+			try (final InputStream is = Files.newInputStream(local)) {
 				IOUtils.copy(is, response.getOutputStream());
 			}
 		} catch (IOException ioe) {
@@ -454,24 +464,14 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	private Path setUpCache(
 			final String path,
 			final AuthToken token,
-			final RequestInfo ri,
-			final String refpath)
+			final RequestInfo ri)
 			throws NotFoundException, IOException, ServerException {
-		final RefAndPath refAndPath = splitRefAndPath(path);
-		final List<String> refpathlist;
-		if (refpath == null) {
-			refpathlist = null;
-		} else {
-			refpathlist = Arrays.asList(refpath.split(","));
-			for (int i = 0; i < refpathlist.size(); i++) {
-				refpathlist.set(i, refpathlist.get(i).trim());
-			}
-		}
-		final String absref = getAbsoluteRef(refAndPath.ref, token,
-				refpathlist);
+		final ResolvedPaths refsAndPath = splitRefsAndPath(path);
+
+		final String absref = getAbsoluteRef(refsAndPath.refpath, token);
 		
 		final Path rootpath = scratch.resolve(absref);
-		final Path filepath = rootpath.resolve(refAndPath.path);
+		final Path filepath = rootpath.resolve(refsAndPath.path);
 		synchronized (this) {
 			if (!locks.containsKey(absref)) {
 				locks.put(absref, new Object());
@@ -485,7 +485,9 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			final String absrefSafe = absref.replace("/", "_");
 			final Path tf = Files.createTempFile(
 					temp, "wsobj." + absrefSafe + ".", ".json.tmp");
-			final UObject uo = saveObjectToFile(token, absref, tf, refpathlist);
+			refsAndPath.refpath.set(refsAndPath.refpath.size() - 1, absref);
+			final UObject uo = saveObjectToFile(
+					refsAndPath.refpath, token, tf);
 			final Path enc = Files.createTempFile(
 					temp, "encoded." + absrefSafe + ".", ".zip.b64.tmp");
 			try (final JsonTokenStream jts = uo.getPlacedStream();) {
@@ -512,9 +514,8 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	}
 	
 	private String getAbsoluteRef(
-			final String ref,
-			final AuthToken token,
-			final List<String> refpathlist)
+			final List<String> refpath,
+			final AuthToken token)
 			throws IOException, ServerException {
 		
 		final WorkspaceClient ws;
@@ -529,8 +530,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		}
 		
 		try {
-			final ObjectSpecification os = buildObjectSpecification(
-					ref, refpathlist);
+			final ObjectSpecification os = buildObjectSpecification(refpath);
 			final Tuple11<Long, String, String, String, Long, String, Long,
 				String, String, Long, Map<String, String>> info =
 					ws.getObjectInfoNew(new GetObjectInfoNewParams()
@@ -554,17 +554,15 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	}
 
 	private ObjectSpecification buildObjectSpecification(
-			final String ref,
-			final List<String> refpathlist) {
+			final List<String> refpath) {
 		final ObjectSpecification os = new ObjectSpecification();
-		if (refpathlist != null) {
-			os.withRef(refpathlist.get(0));
+		if (refpath.size() > 1) {
+			os.withRef(refpath.get(0));
 			final List<String> newpath = new LinkedList<>();
-			newpath.addAll(refpathlist.subList(1, refpathlist.size()));
-			newpath.add(ref);
+			newpath.addAll(refpath.subList(1, refpath.size()));
 			os.withObjRefPath(newpath);
 		} else {
-			os.withRef(ref);
+			os.withRef(refpath.get(0));
 		}
 		return os;
 	}
@@ -626,10 +624,9 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	}
 
 	private UObject saveObjectToFile(
+			final List<String> refpath,
 			final AuthToken token,
-			final String absref,
-			final Path tempfile,
-			final List<String> refpathlist)
+			final Path tempfile)
 			throws IOException, ServerException {
 		final JsonClientCaller ws;
 		if (token == null) {
@@ -643,8 +640,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		}
 		ws.setFileForNextRpcResponse(tempfile.toFile());
 		final Map<String, List<ObjectSpecification>> arg = new HashMap<>();
-		arg.put("objects", Arrays.asList(buildObjectSpecification(
-				absref, refpathlist)));
+		arg.put("objects", Arrays.asList(buildObjectSpecification(refpath)));
 		final UObject uo;
 		try {
 			uo = ws.jsonrpcCall("Workspace.get_objects2", Arrays.asList(arg),
@@ -660,31 +656,46 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		return uo;
 	}
 	
-	private static class RefAndPath {
+	private static class ResolvedPaths {
 		
-		public final String ref;
+		public final List<String> refpath;
 		public final Path path;
 		
-		public RefAndPath(final String ref, final Path path) {
+		public ResolvedPaths(final List<String> refpath, final Path path) {
 			super();
-			this.ref = ref;
+			this.refpath = refpath;
 			this.path = path;
 		}
 	}
 
-	private RefAndPath splitRefAndPath(String path) throws NotFoundException {
+	private ResolvedPaths splitRefsAndPath(String path)
+			throws NotFoundException {
 		if (path.startsWith("/")) {
 			path = path.substring(1);
 		}
-		final String[] s = path.split("/", 4);
-		if (s.length != 4) {
+		final String[] wsAndPath  = path.split("\\$", 2);
+		if (wsAndPath.length != 2) {
 			throw new NotFoundException();
 		}
-		String ref = s[0] + "/" + s[1];
-		if (!"-".equals(s[2])) {
-			ref += "/" + s[2];
+		String localPath = wsAndPath[1];
+		if (!localPath.startsWith("/")) {
+			throw new NotFoundException();
 		}
-		return new RefAndPath(ref, Paths.get(s[3]));
+		localPath = localPath.substring(1, localPath.length());
+		final String[] s = wsAndPath[0].split("/");
+		if (s.length % 3 != 0) {
+			throw new NotFoundException();
+		}
+		final List<String> refpath = new LinkedList<>();
+		for (int i = 0; i < s.length; i ++) {
+			String ref = s[i] + "/" + s[i + 1];
+			if (!"-".equals(s[i + 2])) {
+				ref += "/" + s[i + 2];
+			}
+			i += 2;
+			refpath.add(ref);
+		}
+		return new ResolvedPaths(refpath, Paths.get(localPath));
 	}
 
 	private void logHeaders(
