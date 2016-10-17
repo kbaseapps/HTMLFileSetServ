@@ -34,7 +34,6 @@ public class HTMLFileSetServServerTest {
 	public static void init() throws Exception {
 		//TODO TEST AUTH make configurable?
 		token = AuthService.validateToken(System.getenv("KB_AUTH_TOKEN"));
-		//TODO ZZEXTERNAL BLOCKER TEST need another user
 		
 		String configFilePath = System.getenv("KB_DEPLOYMENT_CONFIG");
 		File deploy = new File(configFilePath);
