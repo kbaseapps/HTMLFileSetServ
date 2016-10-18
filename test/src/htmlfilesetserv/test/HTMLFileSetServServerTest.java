@@ -245,27 +245,49 @@ public class HTMLFileSetServServerTest {
 	@Test
 	public void testFailNoRead() throws Exception {
 		final String path = WS_PRIV.getE1() + "/html/-/$/file.txt";
-		testFail(path, TOKEN1, 403, String.format(
-				"Message: Object html cannot be accessed: User %s may not " +
-				"read workspace %s<",
-				TOKEN1.getUserName(), WS_PRIV.getE1()));
+		testFail(path, TOKEN1.getToken(), 403, String.format(
+				"Object html cannot be accessed: User %s may not " +
+				"read workspace %s",
+				TOKEN1.getUserName(), WS_PRIV.getE1()), false);
+	}
+	
+	@Test
+	public void testFailBadAuthCookie() throws Exception {
+		final String path = WS_PRIV.getE1() + "/html/-/$/file.txt";
+		testFail(path, "whee", 401, String.format(
+				"Login failed! Invalid token",
+				TOKEN1.getUserName(), WS_READ.getE1()), false);
+	}
+	
+	@Test
+	public void testFailBadAuthHeader() throws Exception {
+		final String path = WS_PRIV.getE1() + "/html/-/$/file.txt";
+		testFail(path, "whee", 401, String.format(
+				"Login failed! Invalid token",
+				TOKEN1.getUserName(), WS_READ.getE1()), true);
 	}
 
 	private void testFail(
 			final String path,
-			final AuthToken token,
+			final String token,
 			final int code,
-			final String error)
+			String error,
+			final boolean headerAuth)
 			throws Exception {
 		final URL u = new URL(HTTP_ENDPOINT.toString() + path);
 		final HttpURLConnection hc = (HttpURLConnection) u.openConnection();
-		hc.setRequestProperty("Cookie", "token=" + token.getToken());
+		if (headerAuth) {
+			hc.setRequestProperty("Authorization", token);
+		} else {
+			hc.setRequestProperty("Cookie", "token=" + token);
+		}
 		hc.setDoInput(true);
 		assertThat("incorrect return code", hc.getResponseCode(), is(code));
 		final String contents;
 		try (final InputStream is = hc.getErrorStream()) {
 			contents = IOUtils.toString(is);
 		}
+		error = "Message: " + error + "<br/>";
 		assertThat("Error response does not contain " + error +
 				", got:\n" + contents,
 				contents.contains(error), is(true));
