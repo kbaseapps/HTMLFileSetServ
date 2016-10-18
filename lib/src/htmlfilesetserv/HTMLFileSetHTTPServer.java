@@ -679,7 +679,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		final UObject uo;
 		try {
 			uo = ws.jsonrpcCall("Workspace.get_objects2", Arrays.asList(arg),
-					new TypeReference<UObject>() {}, true, true);
+					new TypeReference<UObject>() {}, true, false);
 		} catch (JsonClientException e) {
 			if (e instanceof ServerException) {
 				throw (ServerException) e;

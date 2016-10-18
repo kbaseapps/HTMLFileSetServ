@@ -2,6 +2,7 @@ package htmlfilesetserv.test;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.junit.Assert.assertThat;
+import static org.junit.Assert.fail;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -43,6 +44,7 @@ import us.kbase.common.test.TestException;
 import us.kbase.workspace.CreateWorkspaceParams;
 import us.kbase.workspace.ObjectSaveData;
 import us.kbase.workspace.SaveObjectsParams;
+import us.kbase.workspace.SetGlobalPermissionsParams;
 import us.kbase.workspace.WorkspaceClient;
 import us.kbase.workspace.WorkspaceIdentity;
 
@@ -231,15 +233,28 @@ public class HTMLFileSetServServerTest {
 	}
 
 	@Test
-	public void testHappyIDsLatestVerCookie() throws Exception {
+	public void testSuccessIDsLatestVerCookie() throws Exception {
 		final String path = WS_READ.getE1() + "/1/-/$/file.txt";
-		testSuccess(path, TOKEN1, "file2", false);
+		testSuccess(path, TOKEN1.getToken(), "file2", false);
 	}
 	
 	@Test
-	public void testHappyNamesFirstVerHeader() throws Exception {
+	public void testSuccessNamesFirstVerHeader() throws Exception {
 		final String path = WS_READ.getE2() + "/html/1/$/file.txt";
-		testSuccess(path, TOKEN1, "file1", true);
+		testSuccess(path, TOKEN1.getToken(), "file1", true);
+	}
+	
+	@Test
+	public void testSuccessAnonymous() throws Exception {
+		WS2.setGlobalPermission(new SetGlobalPermissionsParams()
+				.withId(WS_PRIV.getE1()).withNewPermission("r"));
+		final String path = WS_PRIV.getE2() + "/html/1/$/file.txt";
+		try {
+			testSuccess(path, null, "priv1", null);
+		} finally {
+			WS2.setGlobalPermission(new SetGlobalPermissionsParams()
+					.withId(WS_PRIV.getE1()).withNewPermission("n"));
+		}
 	}
 	
 	@Test
@@ -266,17 +281,27 @@ public class HTMLFileSetServServerTest {
 				"Login failed! Invalid token",
 				TOKEN1.getUserName(), WS_READ.getE1()), true);
 	}
+	
+	@Test
+	public void testFailNoAuth() throws Exception {
+		final String path = WS_READ.getE2() + "/html/-/$/file.txt";
+		testFail(path, null, 403, String.format(
+				"Object html cannot be accessed: Anonymous users may not " +
+				"read workspace %s", WS_READ.getE2()), null);
+	}
 
 	private void testFail(
 			final String path,
 			final String token,
 			final int code,
 			String error,
-			final boolean headerAuth)
+			final Boolean headerAuth)
 			throws Exception {
 		final URL u = new URL(HTTP_ENDPOINT.toString() + path);
 		final HttpURLConnection hc = (HttpURLConnection) u.openConnection();
-		if (headerAuth) {
+		if (headerAuth == null) {
+			// do nothing
+		} else if (headerAuth) {
 			hc.setRequestProperty("Authorization", token);
 		} else {
 			hc.setRequestProperty("Cookie", "token=" + token);
@@ -295,19 +320,29 @@ public class HTMLFileSetServServerTest {
 
 	private void testSuccess(
 			final String path,
-			final AuthToken token,
+			final String token,
 			final String testcontents,
-			final boolean headerAuth)
+			final Boolean headerAuth)
 			throws Exception {
 		final URL u = new URL(HTTP_ENDPOINT.toString() + path);
 		final HttpURLConnection hc = (HttpURLConnection) u.openConnection();
-		if (headerAuth) {
-			hc.setRequestProperty("Authorization", token.getToken());
+		if (headerAuth == null) {
+			//to nothing
+		} else if (headerAuth) {
+			hc.setRequestProperty("Authorization", token);
 		} else {
-			hc.setRequestProperty("Cookie", "token=" + token.getToken());
+			hc.setRequestProperty("Cookie", "token=" + token);
 		}
 		hc.setDoInput(true);
-		assertThat("incorrect return code", hc.getResponseCode(), is(200));
+		int code = hc.getResponseCode();
+		if (code != 200) {
+			final String contents;
+			try (final InputStream is = hc.getErrorStream()) {
+				contents = IOUtils.toString(is);
+			}
+			fail("Request failed. Response code " + code +
+					". Page contents:\n" + contents);
+		}
 		final String contents;
 		try (final InputStream is = hc.getInputStream()) {
 			contents = IOUtils.toString(is);
