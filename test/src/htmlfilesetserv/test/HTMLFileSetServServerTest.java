@@ -303,6 +303,38 @@ public class HTMLFileSetServServerTest {
 	}
 	
 	@Test
+	public void testFailNoSuchObjectID() throws Exception {
+		final String path = WS_READ.getE2() + "/1000/-/$/file.txt";
+		testFail(path, TOKEN1.getToken(), 404, String.format(
+				"No object with id 1000 exists in workspace %s",
+				WS_READ.getE1()), false);
+	}
+	
+	@Test
+	public void testFailNoSuchObjectName() throws Exception {
+		final String path = WS_READ.getE2() + "/nope/-/$/file.txt";
+		testFail(path, TOKEN1.getToken(), 404, String.format(
+				"No object with name nope exists in workspace %s",
+				WS_READ.getE1()), false);
+	}
+	
+	@Test
+	public void testFailNoSuchWorkspaceID() throws Exception {
+		final String path = 100000000 + "/html/-/$/file.txt";
+		testFail(path, TOKEN1.getToken(), 404,
+				"Object html cannot be accessed: No workspace with id " +
+				"100000000 exists", false);
+	}
+	
+	@Test
+	public void testFailNoSuchWorkspaceName() throws Exception {
+		final String path = "ireallyhopethiswsdoesntexist/html/-/$/file.txt";
+		testFail(path, TOKEN1.getToken(), 404,
+				"Object html cannot be accessed: No workspace with name " +
+				"ireallyhopethiswsdoesntexist exists", false);
+	}
+	
+	@Test
 	public void testFailDeletedObject() throws Exception {
 		final String path = WS_READ.getE2() + "/html/-/$/file.txt";
 		final ObjectIdentity oi = new ObjectIdentity()

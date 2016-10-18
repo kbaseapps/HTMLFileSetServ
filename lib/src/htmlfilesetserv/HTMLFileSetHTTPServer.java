@@ -467,9 +467,10 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		String m = e.getMessage();
 		if (m.contains("may not read")) {
 			code = 403;
-		} else if (m.contains("with name") ||
+		} else if (m.contains("No object with") ||
 				m.contains("has been deleted") ||
-				m.contains("is deleted")) {
+				m.contains("is deleted") ||
+				m.contains("No workspace with")) {
 			code = 404;
 		}
 		if (m.contains("ObjectSpecification")) {
