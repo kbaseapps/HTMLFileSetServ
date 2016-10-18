@@ -11,9 +11,12 @@ import java.net.MalformedURLException;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
@@ -95,6 +98,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	private static final String CFG_WS_URL = "workspace-url";
 	private static final String CFG_AUTH_URL = "auth-service-url";
 	private static final String TEMP_DIR = "temp";
+	private static final String CACHE_DIR = "cache";
 	private static final String ERROR_PAGE_PACKAGE = "htmlfilesetserv";
 	private static final String ERROR_PAGE_NAME = "error.mustache";
 	
@@ -112,7 +116,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	}
 		
 	private final Map<String, String> config;
-	private final Path scratch;
+	private final Path cachePath;
 	private final Path temp;
 	private final URL wsURL;
 	private final ConfigurableAuthService auth;
@@ -140,16 +144,20 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		stfuLoggers();
 		config = getConfig();
 		
+		Path scratchPath = Paths.get(".");
 		final String scratch = config.get(CFG_SCRATCH);
-		if (scratch == null || scratch.trim().isEmpty()) {
-			this.scratch = Paths.get(".").normalize().toAbsolutePath();
-		} else {
-			this.scratch = Paths.get(config.get("scratch"))
-					.normalize().toAbsolutePath();
+		if (scratch != null && !scratch.trim().isEmpty()) {
+			scratchPath = Paths.get(config.get(CFG_SCRATCH));
 		}
-		this.temp = this.scratch.resolve(TEMP_DIR);
-		Files.createDirectories(this.temp);
-		logString("Using directory " + this.scratch + " for cache");
+		scratchPath = scratchPath.normalize().toAbsolutePath();
+		cachePath = scratchPath.resolve(CACHE_DIR);
+		temp = scratchPath.resolve(TEMP_DIR);
+		deleteDirectoryAndContents(cachePath);
+		deleteDirectoryAndContents(temp);
+		Files.createDirectories(temp);
+		Files.createDirectories(cachePath);
+		logString("Using cache directory " + cachePath);
+		logString("Using temp directory " + temp);
 		
 		this.wsURL = getWorkspaceURL();
 		
@@ -170,6 +178,33 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		template = mf.compile(ERROR_PAGE_NAME);
 	}
 
+	private void deleteDirectoryAndContents(final Path dir)
+			throws IOException {
+		if (!Files.isDirectory(dir)) {
+			return;
+		}
+		Files.walkFileTree(dir, new SimpleFileVisitor<Path>() {
+			@Override
+			public FileVisitResult visitFile(
+					final Path file,
+					final BasicFileAttributes attrs)
+							throws IOException {
+				Files.delete(file);
+				return FileVisitResult.CONTINUE;
+			}
+
+			@Override
+			public FileVisitResult postVisitDirectory(
+					final Path dir,
+					final IOException exc)
+					throws IOException {
+				Files.delete(dir);
+				return FileVisitResult.CONTINUE;
+			}
+
+		});
+	}
+	
 	private URL getWorkspaceURL()
 			throws ConfigurationException, IOException,
 			JsonClientException {
@@ -470,7 +505,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 
 		final String absref = getAbsoluteRef(refsAndPath.refpath, token);
 		
-		final Path rootpath = scratch.resolve(absref);
+		final Path rootpath = cachePath.resolve(absref);
 		final Path filepath = rootpath.resolve(refsAndPath.path);
 		synchronized (this) {
 			if (!locks.containsKey(absref)) {

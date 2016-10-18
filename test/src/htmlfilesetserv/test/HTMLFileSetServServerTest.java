@@ -48,6 +48,10 @@ import us.kbase.workspace.WorkspaceIdentity;
 
 public class HTMLFileSetServServerTest {
 	
+	//TODO TEST deleted workspace
+	//TODO TEST deleted object
+	//TODO TEST test cache
+	
 	private static AuthToken TOKEN1;
 	private static AuthToken TOKEN2;
 	private static Map<String, String> CONFIG = null;
