@@ -464,18 +464,20 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			final ServerException e,
 			final HttpServletResponse response) throws IOException {
 		int code = 400;
-		if (e.getMessage().contains("may not read")) {
+		String m = e.getMessage();
+		if (m.contains("may not read")) {
 			code = 403;
-		} else if (e.getMessage().contains("with name")) {
+		} else if (m.contains("with name") ||
+				m.contains("has been deleted") ||
+				m.contains("is deleted")) {
 			code = 404;
 		}
-		String err = e.getMessage();
-		if (err.contains("ObjectSpecification")) {
-			err = err.split(":")[1];
+		if (m.contains("ObjectSpecification")) {
+			m = m.split(":")[1];
 		}
 		logErr(code, e, ri);
 		response.setStatus(code);
-		writeErrorPage(code, err, ri, response);
+		writeErrorPage(code, m, ri, response);
 	}
 
 	private AuthToken getToken(final HttpServletRequest request)

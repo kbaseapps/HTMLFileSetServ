@@ -42,6 +42,7 @@ import us.kbase.common.service.UObject;
 import us.kbase.common.test.TestCommon;
 import us.kbase.common.test.TestException;
 import us.kbase.workspace.CreateWorkspaceParams;
+import us.kbase.workspace.ObjectIdentity;
 import us.kbase.workspace.ObjectSaveData;
 import us.kbase.workspace.SaveObjectsParams;
 import us.kbase.workspace.SetGlobalPermissionsParams;
@@ -49,9 +50,6 @@ import us.kbase.workspace.WorkspaceClient;
 import us.kbase.workspace.WorkspaceIdentity;
 
 public class HTMLFileSetServServerTest {
-	
-	//TODO TEST deleted workspace
-	//TODO TEST deleted object
 	
 	private static AuthToken TOKEN1;
 	private static AuthToken TOKEN2;
@@ -303,6 +301,36 @@ public class HTMLFileSetServServerTest {
 				"Object html cannot be accessed: Anonymous users may not " +
 				"read workspace %s", WS_READ.getE2()), null);
 	}
+	
+	@Test
+	public void testFailDeletedObject() throws Exception {
+		final String path = WS_READ.getE2() + "/html/-/$/file.txt";
+		final ObjectIdentity oi = new ObjectIdentity()
+				.withWsid(WS_READ.getE1()).withName("html");
+		WS1.deleteObjects(Arrays.asList(oi));
+		try {
+			testFail(path, TOKEN1.getToken(), 404, String.format(
+					"Object 1 (name html) in workspace %s has been deleted",
+					WS_READ.getE1()), false);
+		} finally {
+			WS1.undeleteObjects(Arrays.asList(oi));
+		}
+	}
+	
+	@Test
+	public void testFailDeletedWorkspace() throws Exception {
+		final String path = WS_READ.getE2() + "/html/-/$/file.txt";
+		final WorkspaceIdentity wsi = new WorkspaceIdentity()
+				.withId(WS_READ.getE1());
+		WS1.deleteWorkspace(wsi);
+		try {
+			testFail(path, TOKEN1.getToken(), 404, String.format(
+					 "Object html cannot be accessed: Workspace %s is deleted",
+					WS_READ.getE2()), false);
+		} finally {
+			WS1.undeleteWorkspace(wsi);
+		}
+	}
 
 	private void testFail(
 			final String path,
@@ -321,11 +349,13 @@ public class HTMLFileSetServServerTest {
 			hc.setRequestProperty("Cookie", "token=" + token);
 		}
 		hc.setDoInput(true);
-		assertThat("incorrect return code", hc.getResponseCode(), is(code));
+		int gotcode = hc.getResponseCode();
 		final String contents;
 		try (final InputStream is = hc.getErrorStream()) {
 			contents = IOUtils.toString(is);
 		}
+		assertThat("incorrect return code, webpage was:\n" + contents,
+				gotcode, is(code));
 		error = "Message: " + error + "<br/>";
 		assertThat("Error response does not contain " + error +
 				", got:\n" + contents,
