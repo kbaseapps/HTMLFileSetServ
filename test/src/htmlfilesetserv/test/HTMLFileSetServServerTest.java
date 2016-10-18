@@ -19,6 +19,8 @@ import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.zip.ZipEntry;
@@ -434,6 +436,8 @@ public class HTMLFileSetServServerTest {
 		assertThat("Error response does not contain " + error +
 				", got:\n" + contents,
 				contents.contains(error), is(true));
+		
+		assertNoTempFilesLeftOnDisk();
 	}
 
 	private void testSuccess(
@@ -487,5 +491,18 @@ public class HTMLFileSetServServerTest {
 		}
 		assertThat("incorrect cache file contents", cacheContents,
 				is(testcontents));
+		
+		assertNoTempFilesLeftOnDisk();
+	}
+
+	private void assertNoTempFilesLeftOnDisk() throws IOException {
+		final List<Path> tempfiles = new LinkedList<>();
+		Files.newDirectoryStream(SCRATCH.resolve("temp"))
+			.forEach(p -> tempfiles.add(p));
+		for (final Path p: tempfiles) {
+			Files.delete(p);
+		}
+		assertThat("Temp files left on disk", tempfiles,
+				is(new LinkedList<>()));
 	}
 }

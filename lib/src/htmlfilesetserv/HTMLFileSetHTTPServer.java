@@ -102,7 +102,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	private static final String ERROR_PAGE_PACKAGE = "htmlfilesetserv";
 	private static final String ERROR_PAGE_NAME = "error.mustache";
 	
-	private static final String TYPE_HTMLFILSET =
+	private static final String TYPE_HTMLFILESET =
 			"HTMLFileSetUtils.HTMLFileSet";
 	
 	
@@ -521,34 +521,52 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 				return filepath;
 			}
 			final String absrefSafe = absref.replace("/", "_");
-			final Path tf = Files.createTempFile(
-					temp, "wsobj." + absrefSafe + ".", ".json.tmp");
-			refsAndPath.refpath.set(refsAndPath.refpath.size() - 1, absref);
-			final UObject uo = saveObjectToFile(
-					refsAndPath.refpath, token, tf);
-			final Path enc = Files.createTempFile(
-					temp, "encoded." + absrefSafe + ".", ".zip.b64.tmp");
-			try (final JsonTokenStream jts = uo.getPlacedStream();) {
-				jts.close();
-				jts.setRoot(Arrays.asList(
-						"result", "0", "data", "0", "data", "file"));
-				jts.writeJson(enc.toFile());
+			Path tf = null;
+			Path enc = null;
+			Path zip = null;
+			try {
+				tf = Files.createTempFile(
+						temp, "wsobj." + absrefSafe + ".", ".json.tmp");
+				refsAndPath.refpath.set(refsAndPath.refpath.size() - 1, absref);
+				final UObject uo = saveObjectToFile(
+						refsAndPath.refpath, token, tf);
+				enc = Files.createTempFile(
+						temp, "encoded." + absrefSafe + ".", ".zip.b64.tmp");
+				try (final JsonTokenStream jts = uo.getPlacedStream();) {
+					jts.close();
+					jts.setRoot(Arrays.asList(
+							"result", "0", "data", "0", "data", "file"));
+					jts.writeJson(enc.toFile());
+				}
+				zip = Files.createTempFile(temp, absrefSafe + ".", ".zip.tmp");
+				base64DecodeJsonString(enc, zip);
+				unzip(rootpath, zip);
+			} finally {
+				if (tf != null) {
+					Files.delete(tf);
+				}
+				if (enc != null) {
+					Files.delete(enc);
+				}
+				if (zip != null) {
+					Files.delete(zip);
+				}
 			}
-			Files.delete(tf);
-			final Path zip = Files.createTempFile(
-					temp, absrefSafe + ".", ".zip.tmp");
-			try (final OutputStream os = new BufferedOutputStream(
-						Files.newOutputStream(zip));
-					final InputStream is = Files.newInputStream(enc)) {
-				final InputStream iswrap = new RemoveFirstAndLast(
-						new BufferedInputStream(is), Files.size(enc));
-				IOUtils.copy(Base64.getDecoder().wrap(iswrap), os);
-			}
-			Files.delete(enc);
-			unzip(rootpath, zip);
-			Files.delete(zip);
 		}
 		return filepath;
+	}
+
+	private void base64DecodeJsonString(
+			final Path encoded,
+			final Path unencoded)
+			throws IOException {
+		try (final OutputStream os = new BufferedOutputStream(
+					Files.newOutputStream(unencoded));
+				final InputStream is = Files.newInputStream(encoded)) {
+			final InputStream iswrap = new RemoveFirstAndLast(
+					new BufferedInputStream(is), Files.size(encoded));
+			IOUtils.copy(Base64.getDecoder().wrap(iswrap), os);
+		}
 	}
 	
 	private String getAbsoluteRef(
@@ -575,7 +593,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 							.withIncludeMetadata(0L)
 							.withObjects(Arrays.asList(os)))
 					.get(0);
-			if (!info.getE3().startsWith(TYPE_HTMLFILSET)) {
+			if (!info.getE3().startsWith(TYPE_HTMLFILESET)) {
 				throw new ServerException(String.format(
 						"The type %s cannot be processed by this service",
 						info.getE3()), -1, "TypeError");
@@ -596,9 +614,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		final ObjectSpecification os = new ObjectSpecification();
 		if (refpath.size() > 1) {
 			os.withRef(refpath.get(0));
-			final List<String> newpath = new LinkedList<>();
-			newpath.addAll(refpath.subList(1, refpath.size()));
-			os.withObjRefPath(newpath);
+			os.withObjRefPath(refpath.subList(1, refpath.size()));
 		} else {
 			os.withRef(refpath.get(0));
 		}
