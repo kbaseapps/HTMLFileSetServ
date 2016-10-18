@@ -113,7 +113,7 @@ public class HTMLFileSetServServerTest {
 				.withWorkspace(wsName1 + "private"));
 		HTML_SERVER = startupHTMLServer(wsURL);
 		int htmlport = HTML_SERVER.getServerPort();
-		HTTP_ENDPOINT = new URL("http://localhost:" + htmlport + "/api/v1/");
+		HTTP_ENDPOINT = new URL("http://localhost:" + htmlport + "/api/v1");
 		System.out.println("Started html server on port " + htmlport);
 		
 		//makes httpurlconnection handle cookies correctly
@@ -196,23 +196,27 @@ public class HTMLFileSetServServerTest {
 	}
 	
 	public static void loadTestData() throws Exception {
-		saveHTMLFileSet(WS1, WS_READ.getE1(), "html", "file1");
-		saveHTMLFileSet(WS1, WS_READ.getE1(), "html", "file2");
-		saveHTMLFileSet(WS1, WS_READ.getE1(), "cache", "cachefile");
-		saveHTMLFileSet(WS2, WS_PRIV.getE1(), "html", "priv1");
+		saveHTMLFileSet(WS1, WS_READ.getE1(), "html", "file1", "file.txt");
+		saveHTMLFileSet(WS1, WS_READ.getE1(), "html", "file2", "file.txt");
+		saveHTMLFileSet(WS1, WS_READ.getE1(), "cache", "cachefile",
+				"file.txt");
+		saveHTMLFileSet(WS1, WS_READ.getE1(), "index", "indexfile",
+				"index.html");
+		saveHTMLFileSet(WS2, WS_PRIV.getE1(), "html", "priv1", "file.txt");
 	}
 
 	private static void saveHTMLFileSet(
 			final WorkspaceClient ws,
 			final Long wsid,
 			final String objname,
-			final String contents)
+			final String contents,
+			final String filename)
 			throws IOException, JsonClientException {
 		final ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		try (final ZipOutputStream zos = new ZipOutputStream(
 				baos, StandardCharsets.UTF_8);) {
 		
-			final ZipEntry ze = new ZipEntry("file.txt");
+			final ZipEntry ze = new ZipEntry(filename);
 			zos.putNextEntry(ze);
 			final byte[] b = contents.getBytes(StandardCharsets.UTF_8);
 			zos.write(b, 0, b.length);
@@ -232,14 +236,14 @@ public class HTMLFileSetServServerTest {
 
 	@Test
 	public void testSuccessIDsLatestVerCookie() throws Exception {
-		final String path = WS_READ.getE1() + "/1/-/$/file.txt";
+		final String path = "/" + WS_READ.getE1() + "/1/-/$/file.txt";
 		final String absref = WS_READ.getE1() + "/1/2";
 		testSuccess(path, absref, TOKEN1.getToken(), "file2", false);
 	}
 	
 	@Test
 	public void testSuccessNamesFirstVerHeader() throws Exception {
-		final String path = WS_READ.getE2() + "/html/1/$/file.txt";
+		final String path = "/" + WS_READ.getE2() + "/html/1/$/file.txt";
 		final String absref = WS_READ.getE1() + "/1/1";
 		testSuccess(path, absref, TOKEN1.getToken(), "file1", true);
 	}
@@ -248,7 +252,7 @@ public class HTMLFileSetServServerTest {
 	public void testSuccessAnonymous() throws Exception {
 		WS2.setGlobalPermission(new SetGlobalPermissionsParams()
 				.withId(WS_PRIV.getE1()).withNewPermission("r"));
-		final String path = WS_PRIV.getE2() + "/html/1/$/file.txt";
+		final String path = "/" + WS_PRIV.getE2() + "/html/1/$/file.txt";
 		final String absref = WS_PRIV.getE1() + "/1/1";
 		try {
 			testSuccess(path, absref, null, "priv1", null);
@@ -260,18 +264,25 @@ public class HTMLFileSetServServerTest {
 	
 	@Test
 	public void testSuccessCache() throws Exception {
-		final String path = WS_READ.getE2() + "/cache/1/$/file.txt";
+		final String path = "/" + WS_READ.getE2() + "/cache/1/$/file.txt";
 		final String absref = WS_READ.getE1() + "/2/1";
 		testSuccess(path, absref, TOKEN1.getToken(), "cachefile", true);
 		//there's not really any way to easily ensure the code is reading
 		//from the cache...
 		testSuccess(path, absref, TOKEN1.getToken(), "cachefile", true);
-		
+	}
+	
+	@Test
+	public void testSuccessindex() throws Exception {
+		final String path = "/" + WS_READ.getE1() + "/index/-/$/";
+		final String absref = WS_READ.getE1() + "/3/1";
+		testSuccess(path, absref, TOKEN1.getToken(), "indexfile", "index.html",
+				false);
 	}
 	
 	@Test
 	public void testFailNoRead() throws Exception {
-		final String path = WS_PRIV.getE1() + "/html/-/$/file.txt";
+		final String path = "/" + WS_PRIV.getE1() + "/html/-/$/file.txt";
 		testFail(path, TOKEN1.getToken(), 403, String.format(
 				"Object html cannot be accessed: User %s may not " +
 				"read workspace %s",
@@ -280,7 +291,7 @@ public class HTMLFileSetServServerTest {
 	
 	@Test
 	public void testFailBadAuthCookie() throws Exception {
-		final String path = WS_PRIV.getE1() + "/html/-/$/file.txt";
+		final String path = "/" + WS_PRIV.getE1() + "/html/-/$/file.txt";
 		testFail(path, "whee", 401, String.format(
 				"Login failed! Invalid token",
 				TOKEN1.getUserName(), WS_READ.getE1()), false);
@@ -288,7 +299,7 @@ public class HTMLFileSetServServerTest {
 	
 	@Test
 	public void testFailBadAuthHeader() throws Exception {
-		final String path = WS_PRIV.getE1() + "/html/-/$/file.txt";
+		final String path = "/" + WS_PRIV.getE1() + "/html/-/$/file.txt";
 		testFail(path, "whee", 401, String.format(
 				"Login failed! Invalid token",
 				TOKEN1.getUserName(), WS_READ.getE1()), true);
@@ -296,15 +307,23 @@ public class HTMLFileSetServServerTest {
 	
 	@Test
 	public void testFailNoAuth() throws Exception {
-		final String path = WS_READ.getE2() + "/html/-/$/file.txt";
+		final String path = "/" + WS_READ.getE2() + "/html/-/$/file.txt";
 		testFail(path, null, 403, String.format(
 				"Object html cannot be accessed: Anonymous users may not " +
 				"read workspace %s", WS_READ.getE2()), null);
 	}
 	
 	@Test
+	public void testFailNoSuchVersion() throws Exception {
+		final String path = "/" + WS_READ.getE2() + "/html/3/$/file.txt";
+		testFail(path, TOKEN1.getToken(), 404, String.format(
+				"No object with id 1 (name html) and version 3 exists in " +
+				"workspace %s", WS_READ.getE1()), false);
+	}
+	
+	@Test
 	public void testFailNoSuchObjectID() throws Exception {
-		final String path = WS_READ.getE2() + "/1000/-/$/file.txt";
+		final String path = "/" + WS_READ.getE2() + "/1000/-/$/file.txt";
 		testFail(path, TOKEN1.getToken(), 404, String.format(
 				"No object with id 1000 exists in workspace %s",
 				WS_READ.getE1()), false);
@@ -312,7 +331,7 @@ public class HTMLFileSetServServerTest {
 	
 	@Test
 	public void testFailNoSuchObjectName() throws Exception {
-		final String path = WS_READ.getE2() + "/nope/-/$/file.txt";
+		final String path = "/" + WS_READ.getE2() + "/nope/-/$/file.txt";
 		testFail(path, TOKEN1.getToken(), 404, String.format(
 				"No object with name nope exists in workspace %s",
 				WS_READ.getE1()), false);
@@ -320,7 +339,7 @@ public class HTMLFileSetServServerTest {
 	
 	@Test
 	public void testFailNoSuchWorkspaceID() throws Exception {
-		final String path = 100000000 + "/html/-/$/file.txt";
+		final String path = "/100000000/html/-/$/file.txt";
 		testFail(path, TOKEN1.getToken(), 404,
 				"Object html cannot be accessed: No workspace with id " +
 				"100000000 exists", false);
@@ -328,7 +347,7 @@ public class HTMLFileSetServServerTest {
 	
 	@Test
 	public void testFailNoSuchWorkspaceName() throws Exception {
-		final String path = "ireallyhopethiswsdoesntexist/html/-/$/file.txt";
+		final String path = "/ireallyhopethiswsdoesntexist/html/-/$/file.txt";
 		testFail(path, TOKEN1.getToken(), 404,
 				"Object html cannot be accessed: No workspace with name " +
 				"ireallyhopethiswsdoesntexist exists", false);
@@ -336,7 +355,7 @@ public class HTMLFileSetServServerTest {
 	
 	@Test
 	public void testFailDeletedObject() throws Exception {
-		final String path = WS_READ.getE2() + "/html/-/$/file.txt";
+		final String path = "/" + WS_READ.getE2() + "/html/-/$/file.txt";
 		final ObjectIdentity oi = new ObjectIdentity()
 				.withWsid(WS_READ.getE1()).withName("html");
 		WS1.deleteObjects(Arrays.asList(oi));
@@ -351,7 +370,7 @@ public class HTMLFileSetServServerTest {
 	
 	@Test
 	public void testFailDeletedWorkspace() throws Exception {
-		final String path = WS_READ.getE2() + "/html/-/$/file.txt";
+		final String path = "/" + WS_READ.getE2() + "/html/-/$/file.txt";
 		final WorkspaceIdentity wsi = new WorkspaceIdentity()
 				.withId(WS_READ.getE1());
 		WS1.deleteWorkspace(wsi);
@@ -362,6 +381,29 @@ public class HTMLFileSetServServerTest {
 		} finally {
 			WS1.undeleteWorkspace(wsi);
 		}
+	}
+	
+	@Test
+	public void testFailNoPath() throws Exception {
+		testFail("", TOKEN1.getToken(), 404, "Not Found", false);
+	}
+	
+	@Test
+	public void testFailNoVersion() throws Exception {
+		final String path = "/" + WS_READ.getE2() + "/html/$/file.txt";
+		testFail(path, TOKEN1.getToken(), 404, "Not Found", false);
+	}
+	
+	@Test
+	public void testFailNoSeparator() throws Exception {
+		final String path = "/" + WS_READ.getE2() + "/html/-/file.txt";
+		testFail(path, TOKEN1.getToken(), 404, "Not Found", false);
+	}
+	
+	@Test
+	public void testFailNoSlashPostSeparator() throws Exception {
+		final String path = "/" + WS_READ.getE2() + "/index/-/$";
+		testFail(path, TOKEN1.getToken(), 404, "Not Found", false);
 	}
 
 	private void testFail(
@@ -401,6 +443,17 @@ public class HTMLFileSetServServerTest {
 			final String testcontents,
 			final Boolean headerAuth)
 			throws Exception {
+		testSuccess(path, absref, token, testcontents, "file.txt", headerAuth);
+	}
+	
+	private void testSuccess(
+			final String path,
+			final String absref,
+			final String token,
+			final String testcontents,
+			final String filename,
+			final Boolean headerAuth)
+			throws Exception {
 		final URL u = new URL(HTTP_ENDPOINT.toString() + path);
 		final HttpURLConnection hc = (HttpURLConnection) u.openConnection();
 		if (headerAuth == null) {
@@ -427,7 +480,7 @@ public class HTMLFileSetServServerTest {
 		assertThat("incorrect file contents", contents, is(testcontents));
 
 		final Path filepath = SCRATCH.resolve("cache").resolve(absref)
-				.resolve("file.txt");
+				.resolve(filename);
 		final String cacheContents;
 		try (final InputStream is = Files.newInputStream(filepath)) {
 			cacheContents = IOUtils.toString(is);
