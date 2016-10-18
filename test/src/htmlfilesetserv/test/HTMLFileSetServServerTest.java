@@ -5,10 +5,12 @@ import static org.junit.Assert.assertThat;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 import java.net.CookieHandler;
 import java.net.CookieManager;
 import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -33,6 +35,7 @@ import org.junit.Test;
 import htmlfilesetserv.HTMLFileSetHTTPServer;
 import us.kbase.auth.AuthToken;
 import us.kbase.auth.AuthService;
+import us.kbase.common.service.JsonClientException;
 import us.kbase.common.service.JsonServerSyslog;
 import us.kbase.common.service.Tuple9;
 import us.kbase.common.service.UObject;
@@ -191,7 +194,15 @@ public class HTMLFileSetServServerTest {
 	}
 	
 	public static void loadTestData() throws Exception {
-		final String contents = "file1";
+		saveHTMLFileSet(WS_READ.getE1(), "html", "file1");
+		saveHTMLFileSet(WS_READ.getE1(), "html", "file2");
+	}
+
+	private static void saveHTMLFileSet(
+			final Long wsid,
+			final String objname,
+			final String contents)
+			throws IOException, JsonClientException {
 		final ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		try (final ZipOutputStream zos = new ZipOutputStream(
 				baos, StandardCharsets.UTF_8);) {
@@ -201,33 +212,51 @@ public class HTMLFileSetServServerTest {
 			final byte[] b = contents.getBytes(StandardCharsets.UTF_8);
 			zos.write(b, 0, b.length);
 		}
-		System.out.println(baos.size());
 		final Map<String, Object> obj = new HashMap<>();
 		final String enc = Base64.getEncoder()
 				.encodeToString(baos.toByteArray());
 		obj.put("file", enc);
-		WS1.saveObjects(new SaveObjectsParams().withId(WS_READ.getE1())
+		WS1.saveObjects(new SaveObjectsParams().withId(wsid)
 				.withObjects(Arrays.asList(new ObjectSaveData()
 						.withData(new UObject(obj))
-						.withName("html")
+						.withName(objname)
 						.withType("HTMLFileSetUtils.HTMLFileSet-0.1"))
 						)
 				);
 	}
 
 	@Test
-	public void testBasicHappyPath() throws Exception {
-		final URL u = new URL(HTTP_ENDPOINT.toString() + WS_READ.getE1() +
-				"/1/-/$/file.txt");
+	public void testHappyIDsLatestVerCookie() throws Exception {
+		final String path = WS_READ.getE1() + "/1/-/$/file.txt";
+		testSuccess(path, TOKEN1, "file2", false);
+	}
+	
+	@Test
+	public void testHappyNamesFirstVerHeader() throws Exception {
+		final String path = WS_READ.getE2() + "/html/1/$/file.txt";
+		testSuccess(path, TOKEN1, "file1", true);
+	}
+
+	private void testSuccess(
+			final String path,
+			final AuthToken token,
+			final String testcontents,
+			final boolean headerAuth)
+			throws MalformedURLException, IOException {
+		final URL u = new URL(HTTP_ENDPOINT.toString() + path);
 		final HttpURLConnection hc = (HttpURLConnection) u.openConnection();
-		hc.setRequestProperty("Cookie", "token=" + TOKEN1.getToken());
+		if (headerAuth) {
+			hc.setRequestProperty("Authorization", token.getToken());
+		} else {
+			hc.setRequestProperty("Cookie", "token=" + token.getToken());
+		}
 		hc.setDoInput(true);
 		final String contents;
 		try (final InputStream is = hc.getInputStream()) {
 			contents = IOUtils.toString(is);
 		}
 		
-		assertThat("incorrect file contents", contents, is("file1"));
+		assertThat("incorrect file contents", contents, is(testcontents));
 		assertThat("correct return code", hc.getResponseCode(), is(200));
 	}
 }
