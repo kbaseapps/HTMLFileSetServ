@@ -10,7 +10,6 @@ import java.io.InputStream;
 import java.net.CookieHandler;
 import java.net.CookieManager;
 import java.net.HttpURLConnection;
-import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -194,11 +193,13 @@ public class HTMLFileSetServServerTest {
 	}
 	
 	public static void loadTestData() throws Exception {
-		saveHTMLFileSet(WS_READ.getE1(), "html", "file1");
-		saveHTMLFileSet(WS_READ.getE1(), "html", "file2");
+		saveHTMLFileSet(WS1, WS_READ.getE1(), "html", "file1");
+		saveHTMLFileSet(WS1, WS_READ.getE1(), "html", "file2");
+		saveHTMLFileSet(WS2, WS_PRIV.getE1(), "html", "priv1");
 	}
 
 	private static void saveHTMLFileSet(
+			final WorkspaceClient ws,
 			final Long wsid,
 			final String objname,
 			final String contents)
@@ -216,7 +217,7 @@ public class HTMLFileSetServServerTest {
 		final String enc = Base64.getEncoder()
 				.encodeToString(baos.toByteArray());
 		obj.put("file", enc);
-		WS1.saveObjects(new SaveObjectsParams().withId(wsid)
+		ws.saveObjects(new SaveObjectsParams().withId(wsid)
 				.withObjects(Arrays.asList(new ObjectSaveData()
 						.withData(new UObject(obj))
 						.withName(objname)
@@ -236,13 +237,42 @@ public class HTMLFileSetServServerTest {
 		final String path = WS_READ.getE2() + "/html/1/$/file.txt";
 		testSuccess(path, TOKEN1, "file1", true);
 	}
+	
+	@Test
+	public void testFailNoRead() throws Exception {
+		final String path = WS_PRIV.getE1() + "/html/-/$/file.txt";
+		testFail(path, TOKEN1, 403, String.format(
+				"Message: Object html cannot be accessed: User %s may not " +
+				"read workspace %s<",
+				TOKEN1.getUserName(), WS_PRIV.getE1()));
+	}
+
+	private void testFail(
+			final String path,
+			final AuthToken token,
+			final int code,
+			final String error)
+			throws Exception {
+		final URL u = new URL(HTTP_ENDPOINT.toString() + path);
+		final HttpURLConnection hc = (HttpURLConnection) u.openConnection();
+		hc.setRequestProperty("Cookie", "token=" + token.getToken());
+		hc.setDoInput(true);
+		assertThat("incorrect return code", hc.getResponseCode(), is(code));
+		final String contents;
+		try (final InputStream is = hc.getErrorStream()) {
+			contents = IOUtils.toString(is);
+		}
+		assertThat("Error response does not contain " + error +
+				", got:\n" + contents,
+				contents.contains(error), is(true));
+	}
 
 	private void testSuccess(
 			final String path,
 			final AuthToken token,
 			final String testcontents,
 			final boolean headerAuth)
-			throws MalformedURLException, IOException {
+			throws Exception {
 		final URL u = new URL(HTTP_ENDPOINT.toString() + path);
 		final HttpURLConnection hc = (HttpURLConnection) u.openConnection();
 		if (headerAuth) {
@@ -251,12 +281,12 @@ public class HTMLFileSetServServerTest {
 			hc.setRequestProperty("Cookie", "token=" + token.getToken());
 		}
 		hc.setDoInput(true);
+		assertThat("incorrect return code", hc.getResponseCode(), is(200));
 		final String contents;
 		try (final InputStream is = hc.getInputStream()) {
 			contents = IOUtils.toString(is);
 		}
 		
 		assertThat("incorrect file contents", contents, is(testcontents));
-		assertThat("correct return code", hc.getResponseCode(), is(200));
 	}
 }
