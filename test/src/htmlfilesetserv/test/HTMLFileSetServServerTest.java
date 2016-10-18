@@ -212,11 +212,30 @@ public class HTMLFileSetServServerTest {
 				Base64.getEncoder().encodeToString(
 						"thisisnotazipfile".getBytes()));
 		saveHTMLFileSet(WS2, WS_PRIV.getE1(), "html", "priv1", "file.txt");
+		
+		saveEmptyType(WS1, WS_READ.getE1(), "badtype");
+	}
+
+	private static void saveEmptyType(
+			final WorkspaceClient ws,
+			final long wsid,
+			final String objname)
+			throws IOException, JsonClientException {
+		
+		final Map<String, String> data = new HashMap<>();
+		data.put("whee", "whoo");
+		ws.saveObjects(new SaveObjectsParams().withId(wsid)
+				.withObjects(Arrays.asList(new ObjectSaveData()
+						.withData(new UObject(data))
+						.withName(objname)
+						.withType("Empty.AType-0.1"))
+						)
+				);
 	}
 
 	private static void saveHTMLFileSet(
 			final WorkspaceClient ws,
-			final Long wsid,
+			final long wsid,
 			final String objname,
 			final String contents,
 			final String filename)
@@ -237,7 +256,7 @@ public class HTMLFileSetServServerTest {
 	
 	private static void saveEncodedZipFileToHTMLFileSet(
 			final WorkspaceClient ws,
-			final Long wsid,
+			final long wsid,
 			final String objname,
 			final String encodedzip)
 			throws IOException, JsonClientException {
@@ -457,6 +476,15 @@ public class HTMLFileSetServServerTest {
 		testFail(path, TOKEN1.getToken(), 500, "Unable to open the zip file",
 				false);
 	}
+	
+	@Test
+	public void testFailBadType() throws Exception {
+		final String path = "/" + WS_READ.getE2() + "/badtype/-/$/file.txt";
+		testFail(path, TOKEN1.getToken(), 400,
+				"The type Empty.AType-0.1 cannot be processed by this service",
+				false);
+	}
+
 
 	private void testFail(
 			final String path,
