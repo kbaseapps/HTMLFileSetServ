@@ -52,7 +52,6 @@ public class HTMLFileSetServServerTest {
 	
 	//TODO TEST deleted workspace
 	//TODO TEST deleted object
-	//TODO TEST test cache
 	
 	private static AuthToken TOKEN1;
 	private static AuthToken TOKEN2;
@@ -201,6 +200,7 @@ public class HTMLFileSetServServerTest {
 	public static void loadTestData() throws Exception {
 		saveHTMLFileSet(WS1, WS_READ.getE1(), "html", "file1");
 		saveHTMLFileSet(WS1, WS_READ.getE1(), "html", "file2");
+		saveHTMLFileSet(WS1, WS_READ.getE1(), "cache", "cachefile");
 		saveHTMLFileSet(WS2, WS_PRIV.getE1(), "html", "priv1");
 	}
 
@@ -235,13 +235,15 @@ public class HTMLFileSetServServerTest {
 	@Test
 	public void testSuccessIDsLatestVerCookie() throws Exception {
 		final String path = WS_READ.getE1() + "/1/-/$/file.txt";
-		testSuccess(path, TOKEN1.getToken(), "file2", false);
+		final String absref = WS_READ.getE1() + "/1/2";
+		testSuccess(path, absref, TOKEN1.getToken(), "file2", false);
 	}
 	
 	@Test
 	public void testSuccessNamesFirstVerHeader() throws Exception {
 		final String path = WS_READ.getE2() + "/html/1/$/file.txt";
-		testSuccess(path, TOKEN1.getToken(), "file1", true);
+		final String absref = WS_READ.getE1() + "/1/1";
+		testSuccess(path, absref, TOKEN1.getToken(), "file1", true);
 	}
 	
 	@Test
@@ -249,12 +251,24 @@ public class HTMLFileSetServServerTest {
 		WS2.setGlobalPermission(new SetGlobalPermissionsParams()
 				.withId(WS_PRIV.getE1()).withNewPermission("r"));
 		final String path = WS_PRIV.getE2() + "/html/1/$/file.txt";
+		final String absref = WS_PRIV.getE1() + "/1/1";
 		try {
-			testSuccess(path, null, "priv1", null);
+			testSuccess(path, absref, null, "priv1", null);
 		} finally {
 			WS2.setGlobalPermission(new SetGlobalPermissionsParams()
 					.withId(WS_PRIV.getE1()).withNewPermission("n"));
 		}
+	}
+	
+	@Test
+	public void testSuccessCache() throws Exception {
+		final String path = WS_READ.getE2() + "/cache/1/$/file.txt";
+		final String absref = WS_READ.getE1() + "/2/1";
+		testSuccess(path, absref, TOKEN1.getToken(), "cachefile", true);
+		//there's not really any way to easily ensure the code is reading
+		//from the cache...
+		testSuccess(path, absref, TOKEN1.getToken(), "cachefile", true);
+		
 	}
 	
 	@Test
@@ -320,6 +334,7 @@ public class HTMLFileSetServServerTest {
 
 	private void testSuccess(
 			final String path,
+			final String absref,
 			final String token,
 			final String testcontents,
 			final Boolean headerAuth)
@@ -347,7 +362,15 @@ public class HTMLFileSetServServerTest {
 		try (final InputStream is = hc.getInputStream()) {
 			contents = IOUtils.toString(is);
 		}
-		
 		assertThat("incorrect file contents", contents, is(testcontents));
+
+		final Path filepath = SCRATCH.resolve("cache").resolve(absref)
+				.resolve("file.txt");
+		final String cacheContents;
+		try (final InputStream is = Files.newInputStream(filepath)) {
+			cacheContents = IOUtils.toString(is);
+		}
+		assertThat("incorrect cache file contents", cacheContents,
+				is(testcontents));
 	}
 }
