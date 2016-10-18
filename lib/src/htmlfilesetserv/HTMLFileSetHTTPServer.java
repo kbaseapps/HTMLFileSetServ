@@ -27,6 +27,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.zip.ZipEntry;
+import java.util.zip.ZipException;
 import java.util.zip.ZipFile;
 
 import javax.servlet.ServletException;
@@ -393,6 +394,9 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		} catch (ServerException e) {
 			handleWSServerError(ri, e, response);
 			return;
+		} catch (CorruptDataException e) {
+			handleErr(500, e, ri, response);
+			return;
 		}
 		
 		if (!Files.isRegularFile(local)) {
@@ -503,7 +507,8 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			final String path,
 			final AuthToken token,
 			final RequestInfo ri)
-			throws NotFoundException, IOException, ServerException {
+			throws NotFoundException, IOException, ServerException,
+			CorruptDataException {
 		final ResolvedPaths refsAndPath = splitRefsAndPath(path);
 
 		final String absref = getAbsoluteRef(refsAndPath.refpath, token);
@@ -558,14 +563,25 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 
 	private void base64DecodeJsonString(
 			final Path encoded,
-			final Path unencoded)
-			throws IOException {
+			final Path unencoded) throws CorruptDataException {
 		try (final OutputStream os = new BufferedOutputStream(
 					Files.newOutputStream(unencoded));
 				final InputStream is = Files.newInputStream(encoded)) {
 			final InputStream iswrap = new RemoveFirstAndLast(
 					new BufferedInputStream(is), Files.size(encoded));
 			IOUtils.copy(Base64.getDecoder().wrap(iswrap), os);
+		} catch (IOException e) {
+			throw new CorruptDataException("Failed to decode the zip file " +
+					"from the workspace object contents", e);
+		}
+	}
+	
+	public static class CorruptDataException extends Exception {
+		
+		public CorruptDataException(
+				final String message,
+				final Throwable cause) {
+			super(message, cause);
 		}
 	}
 	
@@ -661,7 +677,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	private void unzip(
 			final Path targetDir,
 			final Path zipfile)
-			throws IOException {
+			throws IOException, CorruptDataException {
 		try (final ZipFile zf = new ZipFile(zipfile.toFile())) {
 			for (Enumeration<? extends ZipEntry> e = zf.entries();
 					e.hasMoreElements();) {
@@ -674,6 +690,8 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 					IOUtils.copy(is, os);
 				}
 			}
+		} catch (ZipException e) {
+			throw new CorruptDataException("Unable to open the zip file", e);
 		}
 	}
 

@@ -204,6 +204,13 @@ public class HTMLFileSetServServerTest {
 				"file.txt");
 		saveHTMLFileSet(WS1, WS_READ.getE1(), "index", "indexfile",
 				"index.html");
+		saveEncodedZipFileToHTMLFileSet(WS1, WS_READ.getE1(), "nullenc", null);
+		saveEncodedZipFileToHTMLFileSet(WS1, WS_READ.getE1(), "noenc", "");
+		saveEncodedZipFileToHTMLFileSet(WS1, WS_READ.getE1(), "badenc",
+				"bad*base64chars");
+		saveEncodedZipFileToHTMLFileSet(WS1, WS_READ.getE1(), "badzip",
+				Base64.getEncoder().encodeToString(
+						"thisisnotazipfile".getBytes()));
 		saveHTMLFileSet(WS2, WS_PRIV.getE1(), "html", "priv1", "file.txt");
 	}
 
@@ -223,10 +230,19 @@ public class HTMLFileSetServServerTest {
 			final byte[] b = contents.getBytes(StandardCharsets.UTF_8);
 			zos.write(b, 0, b.length);
 		}
-		final Map<String, Object> obj = new HashMap<>();
 		final String enc = Base64.getEncoder()
 				.encodeToString(baos.toByteArray());
-		obj.put("file", enc);
+		saveEncodedZipFileToHTMLFileSet(ws, wsid, objname, enc);
+	}
+	
+	private static void saveEncodedZipFileToHTMLFileSet(
+			final WorkspaceClient ws,
+			final Long wsid,
+			final String objname,
+			final String encodedzip)
+			throws IOException, JsonClientException {
+		final Map<String, Object> obj = new HashMap<>();
+		obj.put("file", encodedzip);
 		ws.saveObjects(new SaveObjectsParams().withId(wsid)
 				.withObjects(Arrays.asList(new ObjectSaveData()
 						.withData(new UObject(obj))
@@ -275,7 +291,7 @@ public class HTMLFileSetServServerTest {
 	}
 	
 	@Test
-	public void testSuccessindex() throws Exception {
+	public void testSuccessIndexDotHtml() throws Exception {
 		final String path = "/" + WS_READ.getE1() + "/index/-/$/";
 		final String absref = WS_READ.getE1() + "/3/1";
 		testSuccess(path, absref, TOKEN1.getToken(), "indexfile", "index.html",
@@ -406,6 +422,40 @@ public class HTMLFileSetServServerTest {
 	public void testFailNoSlashPostSeparator() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/index/-/$";
 		testFail(path, TOKEN1.getToken(), 404, "Not Found", false);
+	}
+	
+	@Test
+	public void testFailNoFile() throws Exception {
+		final String path = "/" + WS_READ.getE2() + "/html/-/$/bar.txt";
+		testFail(path, TOKEN1.getToken(), 404, "Not Found", false);
+	}
+	
+	@Test
+	public void testFailNullEncoding() throws Exception {
+		final String path = "/" + WS_READ.getE2() + "/nullenc/-/$/file.txt";
+		testFail(path, TOKEN1.getToken(), 500, "Unable to open the zip file",
+				false);
+	}
+	
+	@Test
+	public void testFailNoEncoding() throws Exception {
+		final String path = "/" + WS_READ.getE2() + "/noenc/-/$/file.txt";
+		testFail(path, TOKEN1.getToken(), 500, "Unable to open the zip file",
+				false);
+	}
+	
+	@Test
+	public void testFailBadEncoding() throws Exception {
+		final String path = "/" + WS_READ.getE2() + "/badenc/-/$/file.txt";
+		testFail(path, TOKEN1.getToken(), 500, "Failed to decode the zip " +
+				"file from the workspace object contents", false);
+	}
+	
+	@Test
+	public void testFailBadZip() throws Exception {
+		final String path = "/" + WS_READ.getE2() + "/badzip/-/$/file.txt";
+		testFail(path, TOKEN1.getToken(), 500, "Unable to open the zip file",
+				false);
 	}
 
 	private void testFail(
