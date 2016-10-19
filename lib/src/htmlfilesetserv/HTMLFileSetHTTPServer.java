@@ -100,6 +100,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	private static final String CFG_AUTH_URL = "auth-service-url";
 	private static final String TEMP_DIR = "temp";
 	private static final String CACHE_DIR = "cache";
+	private static final String TOKEN_COOKIE_NAME = "kbase_session";
 	private static final String ERROR_PAGE_PACKAGE = "htmlfilesetserv";
 	private static final String ERROR_PAGE_NAME = "error.mustache";
 	
@@ -493,7 +494,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		}
 		if (request.getCookies() != null) {
 			for (final Cookie c: request.getCookies()) {
-				if (c.getName().equals("token")) {
+				if (c.getName().equals(TOKEN_COOKIE_NAME)) {
 					return auth.validateToken(c.getValue());
 				}
 			}

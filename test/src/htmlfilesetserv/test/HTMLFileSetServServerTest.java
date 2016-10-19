@@ -198,6 +198,7 @@ public class HTMLFileSetServServerTest {
 	}
 	
 	public static void loadTestData() throws Exception {
+		//workspace for user 1
 		saveHTMLFileSet(WS1, WS_READ.getE1(), "html", "file1", "file.txt");
 		saveHTMLFileSet(WS1, WS_READ.getE1(), "html", "file2", "file.txt");
 		saveHTMLFileSet(WS1, WS_READ.getE1(), "cache", "cachefile",
@@ -211,9 +212,22 @@ public class HTMLFileSetServServerTest {
 		saveEncodedZipFileToHTMLFileSet(WS1, WS_READ.getE1(), "badzip",
 				Base64.getEncoder().encodeToString(
 						"thisisnotazipfile".getBytes()));
-		saveHTMLFileSet(WS2, WS_PRIV.getE1(), "html", "priv1", "file.txt");
-		
 		saveEmptyType(WS1, WS_READ.getE1(), "badtype");
+		
+		//private workspace for user 2
+		saveHTMLFileSet(WS2, WS_PRIV.getE1(), "html", "priv1", "file.txt");
+		saveRef(WS2, WS_PRIV.getE1(), "ref1", WS_PRIV.getE1(), "html", 1);
+	}
+
+	private static void saveRef(
+			final WorkspaceClient ws,
+			final long wsid,
+			final String wsname,
+			final long refWsid,
+			final String refWsname,
+			final int refVersion) {
+		// TODO Auto-generated method stub
+		
 	}
 
 	private static void saveEmptyType(
@@ -228,7 +242,7 @@ public class HTMLFileSetServServerTest {
 				.withObjects(Arrays.asList(new ObjectSaveData()
 						.withData(new UObject(data))
 						.withName(objname)
-						.withType("Empty.AType-0.1"))
+						.withType("Empty.AType-1.0"))
 						)
 				);
 	}
@@ -481,7 +495,7 @@ public class HTMLFileSetServServerTest {
 	public void testFailBadType() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/badtype/-/$/file.txt";
 		testFail(path, TOKEN1.getToken(), 400,
-				"The type Empty.AType-0.1 cannot be processed by this service",
+				"The type Empty.AType-1.0 cannot be processed by this service",
 				false);
 	}
 
@@ -500,7 +514,7 @@ public class HTMLFileSetServServerTest {
 		} else if (headerAuth) {
 			hc.setRequestProperty("Authorization", token);
 		} else {
-			hc.setRequestProperty("Cookie", "token=" + token);
+			hc.setRequestProperty("Cookie", "kbase_session=" + token);
 		}
 		hc.setDoInput(true);
 		int gotcode = hc.getResponseCode();
@@ -543,7 +557,7 @@ public class HTMLFileSetServServerTest {
 		} else if (headerAuth) {
 			hc.setRequestProperty("Authorization", token);
 		} else {
-			hc.setRequestProperty("Cookie", "token=" + token);
+			hc.setRequestProperty("Cookie", "kbase_session=" + token);
 		}
 		hc.setDoInput(true);
 		int code = hc.getResponseCode();
