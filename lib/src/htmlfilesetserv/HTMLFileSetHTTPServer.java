@@ -481,6 +481,9 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		if (m.contains("ObjectSpecification")) {
 			m = m.split(":")[1];
 		}
+		if (m.contains("Reference chain #1, position")) {
+			m = m.replaceFirst(" #1,", "");
+		}
 		logErr(code, e, ri);
 		response.setStatus(code);
 		writeErrorPage(code, m, ri, response);

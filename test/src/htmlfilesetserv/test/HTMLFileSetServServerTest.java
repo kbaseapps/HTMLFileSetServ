@@ -48,6 +48,7 @@ import us.kbase.workspace.ObjectIdentity;
 import us.kbase.workspace.ObjectSaveData;
 import us.kbase.workspace.SaveObjectsParams;
 import us.kbase.workspace.SetGlobalPermissionsParams;
+import us.kbase.workspace.SetPermissionsParams;
 import us.kbase.workspace.WorkspaceClient;
 import us.kbase.workspace.WorkspaceIdentity;
 
@@ -113,8 +114,11 @@ public class HTMLFileSetServServerTest {
 				.withWorkspace(wsName1));
 		WS_PRIV = WS2.createWorkspace(new CreateWorkspaceParams()
 				.withWorkspace(wsName1 + "private"));
+		WS1.setPermissions(new SetPermissionsParams().withId(WS_READ.getE1())
+				.withNewPermission("w")
+				.withUsers(Arrays.asList(TOKEN2.getUserName())));
 		HTML_SERVER = startupHTMLServer(wsURL);
-		int htmlport = HTML_SERVER.getServerPort();
+		final int htmlport = HTML_SERVER.getServerPort();
 		HTTP_ENDPOINT = new URL("http://localhost:" + htmlport + "/api/v1");
 		System.out.println("Started html server on port " + htmlport);
 		
@@ -216,18 +220,29 @@ public class HTMLFileSetServServerTest {
 		
 		//private workspace for user 2
 		saveHTMLFileSet(WS2, WS_PRIV.getE1(), "html", "priv1", "file.txt");
-		saveRef(WS2, WS_PRIV.getE1(), "ref1", WS_PRIV.getE1(), "html", 1);
+		saveRef(WS2, WS_PRIV.getE1(), "ref", WS_PRIV.getE1(), "html", 1);
+		saveRef(WS2, WS_READ.getE1(), "directRef", WS_PRIV.getE1(), "html", 1);
+		saveRef(WS2, WS_READ.getE1(), "indirectRef",
+				WS_PRIV.getE1(), "ref", 1);
 	}
 
 	private static void saveRef(
 			final WorkspaceClient ws,
 			final long wsid,
-			final String wsname,
+			final String objname,
 			final long refWsid,
 			final String refWsname,
-			final int refVersion) {
-		// TODO Auto-generated method stub
-		
+			final int refVersion)
+			throws IOException, JsonClientException {
+		final Map<String, String> data = new HashMap<>();
+		data.put("ref", refWsid + "/" + refWsname + "/" + refVersion);
+		ws.saveObjects(new SaveObjectsParams().withId(wsid)
+				.withObjects(Arrays.asList(new ObjectSaveData()
+						.withData(new UObject(data))
+						.withName(objname)
+						.withType("Empty.ARef-1.0"))
+						)
+				);
 	}
 
 	private static void saveEmptyType(
@@ -328,6 +343,25 @@ public class HTMLFileSetServServerTest {
 		final String path = "/" + WS_READ.getE1() + "/index/-/$/";
 		final String absref = WS_READ.getE1() + "/3/1";
 		testSuccess(path, absref, TOKEN1.getToken(), "indexfile", "index.html",
+				false);
+	}
+	
+	@Test
+	public void testSuccess1Ref() throws Exception {
+		final String path = "/" + WS_READ.getE1() + "/directRef/-/" +
+				WS_PRIV.getE1() + "/html/1/$/file.txt";
+		final String absref = WS_PRIV.getE1() + "/1/1";
+		testSuccess(path, absref, TOKEN1.getToken(), "priv1", "file.txt",
+				false);
+	}
+	
+	@Test
+	public void testSuccess2Ref() throws Exception {
+		final String path = "/" + WS_READ.getE1() + "/indirectRef/1/" +
+				WS_PRIV.getE1() + "/ref/1/" +
+				WS_PRIV.getE1() + "/html/-/$/file.txt";
+		final String absref = WS_PRIV.getE1() + "/1/1";
+		testSuccess(path, absref, TOKEN1.getToken(), "priv1", "file.txt",
 				false);
 	}
 	
@@ -499,6 +533,23 @@ public class HTMLFileSetServServerTest {
 				false);
 	}
 
+	@Test
+	public void testFailRef() throws Exception {
+		final String path = "/" + WS_READ.getE1() + "/indirectRef/1/" +
+				WS_PRIV.getE1() + "/html/-/$/file.txt";
+		testFail(path, TOKEN1.getToken(), 400, String.format(
+				"Reference chain position 1: Object indirectRef with " +
+				"version 1 in workspace %s does not contain a reference to " +
+				"object html in workspace %s",
+				WS_READ.getE1(), WS_PRIV.getE1()), false);
+	}
+	
+	@Test
+	public void testFailRefBadPath() throws Exception {
+		final String path = "/" + WS_READ.getE1() + "/directRef/" +
+				WS_PRIV.getE1() + "/html/-/$/file.txt";
+		testFail(path, TOKEN1.getToken(), 404, "Not Found", false);
+	}
 
 	private void testFail(
 			final String path,
