@@ -62,6 +62,7 @@ import us.kbase.common.service.ServerException;
 import us.kbase.common.service.Tuple11;
 import us.kbase.common.service.UObject;
 import us.kbase.common.service.UnauthorizedException;
+import us.kbase.typedobj.core.TypeDefName;
 import us.kbase.workspace.GetObjectInfoNewParams;
 import us.kbase.workspace.ObjectSpecification;
 import us.kbase.workspace.WorkspaceClient;
@@ -117,6 +118,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		codeToLine.put(500, "Internal Server Error");
 	}
 		
+	private final Map<TypeDefName, TypeHandler> handlers = new HashMap<>();
 	private final Map<String, String> config;
 	private final Path cachePath;
 	private final Path temp;
@@ -130,6 +132,80 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	private Integer jettyPort = null;
 	private Server jettyServer = null;
 	
+	private interface TypeHandler {
+	
+		TypeDefName getHandledType();
+		
+		Path getCachePathStuffix(Path zipFilePath);
+		
+		void getZipFile(
+				Path cachePathSuffix,
+				List<String> workspaceRefPath,
+				Path zipfile,
+				AuthToken token)
+				throws IOException, ServerException, CorruptDataException;
+	}
+	
+	private static class HTMLFileSetHandler implements TypeHandler {
+
+		private final static TypeDefName TYPE = new TypeDefName(
+				"HTMLFileSetUtils", "HTMLFileSet");
+		
+		private final URL wsURL;
+		private final Path temp;
+		
+		public HTMLFileSetHandler(final URL workspaceURL, final Path tempdir) {
+			wsURL = workspaceURL;
+			temp = tempdir;
+		}
+		
+		@Override
+		public TypeDefName getHandledType() {
+			return TYPE;
+		}
+
+		@Override
+		public Path getCachePathStuffix(Path zipFilePath) {
+			return Paths.get(".");
+		}
+
+		@Override
+		public void getZipFile(
+				final Path cachePathSuffix,
+				final List<String> workspaceRefPath,
+				final Path zipfile,
+				final AuthToken token) throws IOException, ServerException,
+					CorruptDataException {
+			final String absrefSafe = workspaceRefPath.get(
+					workspaceRefPath.size() - 1).replace("/", "_");
+			Path tf = null;
+			Path enc = null;
+			try {
+			tf = Files.createTempFile(
+					temp, "wsobj." + absrefSafe + ".", ".json.tmp");
+			final UObject uo = saveObjectToFile(
+					wsURL, workspaceRefPath, token, tf);
+			enc = Files.createTempFile(
+					temp, "encoded." + absrefSafe + ".", ".zip.b64.tmp");
+			try (final JsonTokenStream jts = uo.getPlacedStream();) {
+				jts.close();
+				jts.setRoot(Arrays.asList(
+						"result", "0", "data", "0", "data", "file"));
+				jts.writeJson(enc.toFile());
+			}
+			base64DecodeJsonString(enc, zipfile);
+			} finally {
+				if (tf != null) {
+					Files.delete(tf);
+				}
+				if (enc != null) {
+					Files.delete(enc);
+				}
+			}
+			
+		}
+		
+	}
 
 	// could make custom 404 page at some point
 	// http://www.eclipse.org/jetty/documentation/current/custom-error-pages.html
@@ -178,6 +254,10 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		final MustacheFactory mf = new DefaultMustacheFactory(
 				ERROR_PAGE_PACKAGE);
 		template = mf.compile(ERROR_PAGE_NAME);
+		
+		final HTMLFileSetHandler hfsh = new HTMLFileSetHandler(wsURL, temp);
+		
+		handlers.put(hfsh.getHandledType(), hfsh);
 	}
 
 	private void deleteDirectoryAndContents(final Path dir)
@@ -537,7 +617,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 				tf = Files.createTempFile(
 						temp, "wsobj." + absrefSafe + ".", ".json.tmp");
 				refsAndPath.refpath.set(refsAndPath.refpath.size() - 1, absref);
-				final UObject uo = saveObjectToFile(
+				final UObject uo = saveObjectToFile(wsURL, 
 						refsAndPath.refpath, token, tf);
 				enc = Files.createTempFile(
 						temp, "encoded." + absrefSafe + ".", ".zip.b64.tmp");
@@ -565,7 +645,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		return filepath;
 	}
 
-	private void base64DecodeJsonString(
+	private static void base64DecodeJsonString(
 			final Path encoded,
 			final Path unencoded) throws CorruptDataException {
 		try (final OutputStream os = new BufferedOutputStream(
@@ -629,7 +709,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		}
 	}
 
-	private ObjectSpecification buildObjectSpecification(
+	private static ObjectSpecification buildObjectSpecification(
 			final List<String> refpath) {
 		final ObjectSpecification os = new ObjectSpecification();
 		if (refpath.size() > 1) {
@@ -699,7 +779,8 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		}
 	}
 
-	private UObject saveObjectToFile(
+	private static UObject saveObjectToFile(
+			final URL wsURL,
 			final List<String> refpath,
 			final AuthToken token,
 			final Path tempfile)
