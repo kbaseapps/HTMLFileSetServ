@@ -1,24 +1,22 @@
 HTMLFileSetServ
 ===============
 
-Service for serving the content of a HTMLFileSet object as HTML files.
+Service for serving the contents of a workspace object as HTML files.
 
 **Note:** expects the scratch space defined in the deploy.cfg to be a separate
 space *per server instance*. Multiple server instances writing to the same
 scratch space will cause errors.
 
-Currently only supports the HTMLFileSetUtils.HTMLFileSet type.
-
 API:
 ----
 
-X/Y/Z is a reference to a workspace object of the HTMLFileSet type.  
+X/Y/Z is a reference to a workspace object.  
 X is the workspace name or id  
 Y is the object name or id  
 Z is the version number, or '-' to indicate the latest version.
 
 [zipfile identifier] is a portion of the url that specifies which
-html zip file to retrieve from the workspace object if the object contains
+html zip file to retrieve from the workspace object if the object may contain
 multiple zip files (or references to zip files). The identifier is type
 specific.
 
