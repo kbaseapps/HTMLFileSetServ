@@ -38,8 +38,16 @@
     <include name="syslog4j/syslog4j-0.9.46.jar"/>
     <include name="kbase/workspace/WorkspaceService-0.5.0.jar"/>
     <include name="mustache/compiler-0.9.3.jar"/>
+    <!-- shock client requirements -->
+    <include name="kbase/shock/shock-client-0.0.14.jar"/>
+    <include name="apache_commons/http/httpclient-4.3.1.jar"/>
+    <include name="apache_commons/http/httpcore-4.3.jar"/>
+    <include name="apache_commons/http/httpmime-4.3.1.jar"/>
+    <include name="apache_commons/commons-lang3-3.1.jar"/>
+    <include name="apache_commons/commons-logging-1.1.1.jar"/>
     <!-- these are needed for tests -->
     <include name="mongo/mongo-java-driver-2.13.3.jar"/>
+    <include name="kbase/handle/HandleServiceClient-160803-b9de699.jar"/>
   </fileset>
 
   <path id="compile.classpath">

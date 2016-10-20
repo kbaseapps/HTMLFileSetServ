@@ -22,5 +22,7 @@
 	<classpathentry kind="lib" path="/jars/lib/jars/kbase/workspace/WorkspaceService-0.5.0.jar"/>
 	<classpathentry kind="lib" path="/jars/lib/jars/mustache/compiler-0.9.3.jar"/>
 	<classpathentry kind="lib" path="/jars/lib/jars/mongo/mongo-java-driver-2.13.3.jar"/>
+	<classpathentry kind="lib" path="/jars/lib/jars/kbase/shock/shock-client-0.0.14.jar" sourcepath="/jars/lib/jars/kbase/shock/shock-client-0.0.14-sources.jar"/>
+	<classpathentry kind="lib" path="/jars/lib/jars/kbase/handle/HandleServiceClient-160803-b9de699.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>
