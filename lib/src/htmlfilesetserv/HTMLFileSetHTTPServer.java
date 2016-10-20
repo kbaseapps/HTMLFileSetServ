@@ -96,7 +96,6 @@ import us.kbase.workspace.WorkspaceClient;
 @SuppressWarnings("serial")
 public class HTMLFileSetHTTPServer extends HttpServlet {
 	
-	//TODO TESTS
 	//TODO ZZLATER cache reaper - need to keep date of last access & directory size (calculate during creation) in mem
 	//TODO ZZLATER UI guys / thomason help with error page - defer indefinitely per Bill
 	//TODO ZZEXTERNAL dynamic services should have data mounts
@@ -690,7 +689,8 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		}
 		if (request.getCookies() != null) {
 			for (final Cookie c: request.getCookies()) {
-				if (c.getName().equals(TOKEN_COOKIE_NAME)) {
+				if (c.getName().equals(TOKEN_COOKIE_NAME) &&
+						!c.getValue().isEmpty()) {
 					return auth.validateToken(
 							unmungeCookiePerShane(c.getValue()));
 				}
@@ -699,20 +699,29 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		return null;
 	}
 
-	private String unmungeCookiePerShane(final String cookie) {
-		if (true) {
-			System.out.println("got cookie: " + cookie);
-			return cookie; //TODO NOW remove
-		}
-		String t;
+	private String unmungeCookiePerShane(final String cookie)
+			throws AuthException {
+		final String unenc;
 		try {
-			t = URLDecoder.decode(cookie, StandardCharsets.UTF_8.name());
+			unenc = URLDecoder.decode(cookie, StandardCharsets.UTF_8.name());
 		} catch (UnsupportedEncodingException e) {
 			throw new RuntimeException("This should be impossible", e);
 		}
-//		for String in 
-		// TODO Auto-generated method stub
-		return null;
+		final Map<String, String> contents = new HashMap<>();
+		for (final String part: unenc.split("\\|")) {
+			final String[] partpart = part.split("=");
+			if (partpart.length != 2) {
+				throw new AuthException("Cannot parse token from cookie: " +
+						"Subportion of cookie missing value");
+			}
+			contents.put(partpart[0], partpart[1]);
+		}
+		final String token = contents.get("token");
+		if (token == null) {
+			throw new AuthException("Cannot parse token from cookie: " +
+					"No token section");
+		}
+		return token.replace("PIPESIGN", "|").replace("EQUALSSIGN", "=");
 	}
 
 	private static class NotFoundException extends Exception {
