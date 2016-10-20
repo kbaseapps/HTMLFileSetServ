@@ -3,9 +3,26 @@ HTMLFileSetServ
 
 Service for serving the contents of a workspace object as HTML files.
 
-**Note:** expects the scratch space defined in the deploy.cfg to be a separate
-space *per server instance*. Multiple server instances writing to the same
-scratch space will cause errors.
+Warnings:
+---------
+
+The service caches data to the scratch space defined in the deploy.cfg file,
+including private data. The scrach space used by the service must not be made
+available to any other processes or users.
+
+The service expects the scratch space defined in the deploy.cfg file to be a
+separate space *per server instance*. Multiple server instances writing to the
+same scratch space will cause errors.
+
+The service serves arbitrary files from the KBase stores, and any
+user can save data to the KBase stores. This means that said user can
+submit malicious code to KBase and have that code served up under the
+KBase namespace.
+
+It may be worthwhile to restrict creation privileges to specified users,
+but based on the understanding of the use case this is not workable.
+Caja (https://developers.google.com/caja/) might be useful for protecting
+any front end widgets.
 
 API:
 ----

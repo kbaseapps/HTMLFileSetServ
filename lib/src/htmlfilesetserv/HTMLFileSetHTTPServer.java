@@ -7,9 +7,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintStream;
+import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -94,7 +96,6 @@ import us.kbase.workspace.WorkspaceClient;
 @SuppressWarnings("serial")
 public class HTMLFileSetHTTPServer extends HttpServlet {
 	
-	//TODO TESTS
 	//TODO ZZLATER cache reaper - need to keep date of last access & directory size (calculate during creation) in mem
 	//TODO ZZLATER UI guys / thomason help with error page - defer indefinitely per Bill
 	//TODO ZZEXTERNAL dynamic services should have data mounts
@@ -303,7 +304,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		}
 	}
 	
-	public static class ZipIdentifierException extends Exception {
+	private static class ZipIdentifierException extends Exception {
 		
 		public ZipIdentifierException(final String message) {
 			super(message);
@@ -584,7 +585,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		} catch (ServerException e) {
 			handleWSServerError(ri, e, response);
 			return;
-		} catch (ZipIdentifierException e) {
+		} catch (ZipIdentifierException | UnsupportedTypeException e) {
 			handleErr(400, e, ri, response);
 			return;
 		}
@@ -666,6 +667,8 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 				m.contains("is deleted") ||
 				m.contains("No workspace with")) {
 			code = 404;
+		} else if (m.contains("handle error")) {
+			code = 500;
 		}
 		if (m.contains("ObjectSpecification")) {
 			m = m.split(":")[1];
@@ -686,12 +689,39 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		}
 		if (request.getCookies() != null) {
 			for (final Cookie c: request.getCookies()) {
-				if (c.getName().equals(TOKEN_COOKIE_NAME)) {
-					return auth.validateToken(c.getValue());
+				if (c.getName().equals(TOKEN_COOKIE_NAME) &&
+						!c.getValue().isEmpty()) {
+					return auth.validateToken(
+							unmungeCookiePerShane(c.getValue()));
 				}
 			}
 		}
 		return null;
+	}
+
+	private String unmungeCookiePerShane(final String cookie)
+			throws AuthException {
+		final String unenc;
+		try {
+			unenc = URLDecoder.decode(cookie, StandardCharsets.UTF_8.name());
+		} catch (UnsupportedEncodingException e) {
+			throw new RuntimeException("This should be impossible", e);
+		}
+		final Map<String, String> contents = new HashMap<>();
+		for (final String part: unenc.split("\\|")) {
+			final String[] partpart = part.split("=");
+			if (partpart.length != 2) {
+				throw new AuthException("Cannot parse token from cookie: " +
+						"Subportion of cookie missing value");
+			}
+			contents.put(partpart[0], partpart[1]);
+		}
+		final String token = contents.get("token");
+		if (token == null) {
+			throw new AuthException("Cannot parse token from cookie: " +
+					"No token section");
+		}
+		return token.replace("PIPESIGN", "|").replace("EQUALSSIGN", "=");
 	}
 
 	private static class NotFoundException extends Exception {
@@ -703,7 +733,13 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		public NotFoundException(final String message) {
 			super(message);
 		}
+	}
+	
+	private static class UnsupportedTypeException extends Exception {
 		
+		public UnsupportedTypeException(final String message) {
+			super(message);
+		}
 	}
 	
 	private Path setUpCache(
@@ -712,7 +748,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			final RequestInfo ri)
 			throws NotFoundException, IOException, ServerException,
 			CorruptDataException, ZipIdentifierException,
-			DataRetrievalException {
+			DataRetrievalException, UnsupportedTypeException {
 		final ResolvedPaths refsAndPath = splitRefsAndPath(path);
 		final List<String> refpath = refsAndPath.refpath;
 
@@ -722,9 +758,9 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		refpath.set(refpath.size() - 1, absref);
 		final TypeHandler handler = handlers.get(absrefAndType.type.getType());
 		if (handler == null) {
-			throw new ServerException(String.format(
+			throw new UnsupportedTypeException(String.format(
 					"The type %s cannot be processed by this service",
-					absrefAndType.type.getTypePrefix()), -1, "TypeError");
+					absrefAndType.type.getTypePrefix()));
 		}
 		final Path zipID = handler.getZipFileIdentifier(refsAndPath.path);
 		
@@ -773,7 +809,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		}
 	}
 	
-	public static class CorruptDataException extends Exception {
+	private static class CorruptDataException extends Exception {
 		
 		public CorruptDataException(final String message) {
 			super(message);
@@ -786,11 +822,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		}
 	}
 	
-	public static class DataRetrievalException extends Exception {
-		
-		public DataRetrievalException(final String message) {
-			super(message);
-		}
+	private static class DataRetrievalException extends Exception {
 		
 		public DataRetrievalException(
 				final String message,
@@ -931,7 +963,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 							buildObjectSpecification(refPath))))
 					.getData().get(0);
 
-			// not really any way to test the next two if statements without
+			// not really any way to test the next if statement without
 			// setting up an insane test rig
 			if (!obj.getInfo().getE3().equals(type.getTypePrefix())) {
 				throw new CorruptDataException("Workspace type changed " +
@@ -939,9 +971,10 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			}
 			if (obj.getHandleError() != null ||
 					obj.getHandleStacktrace() != null) {
-				throw new DataRetrievalException(String.format(
-						"Workspace reported a handle error: %s\n%s",
-						obj.getHandleError(), obj.getHandleStacktrace()));
+				throw new ServerException(
+						"Workspace reported a handle error: " +
+								obj.getHandleError(), -1, "Handle Error",
+								obj.getHandleStacktrace());
 			}
 			@SuppressWarnings("unchecked")
 			final Map<String, Object> o = obj.getData()
