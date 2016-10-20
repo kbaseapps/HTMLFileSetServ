@@ -4,6 +4,7 @@ import static org.hamcrest.CoreMatchers.is;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.fail;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
@@ -22,7 +23,9 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Properties;
+import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -33,9 +36,10 @@ import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-
 import htmlfilesetserv.HTMLFileSetHTTPServer;
 import us.kbase.auth.AuthToken;
+import us.kbase.abstracthandle.AbstractHandleClient;
+import us.kbase.abstracthandle.Handle;
 import us.kbase.auth.AuthService;
 import us.kbase.common.service.JsonClientException;
 import us.kbase.common.service.JsonServerSyslog;
@@ -43,6 +47,8 @@ import us.kbase.common.service.Tuple9;
 import us.kbase.common.service.UObject;
 import us.kbase.common.test.TestCommon;
 import us.kbase.common.test.TestException;
+import us.kbase.shock.client.BasicShockClient;
+import us.kbase.shock.client.ShockNode;
 import us.kbase.workspace.CreateWorkspaceParams;
 import us.kbase.workspace.ObjectIdentity;
 import us.kbase.workspace.ObjectSaveData;
@@ -68,7 +74,19 @@ public class HTMLFileSetServServerTest {
 	private static WorkspaceClient WS1;
 	private static WorkspaceClient WS2;
 	
+	private static URL SHOCK_URL;
+	private static URL HANDLE_URL;
+	
+	private static AbstractHandleClient HANDLE;
+	
 	private static URL HTTP_ENDPOINT;
+	
+	private static UUID TEST_UUID = UUID.randomUUID();
+	private static String TEST_BAD_UUID = TEST_UUID + "A";
+	
+	private static Map<String, NodeAndHandle> CREATED_NODES = new HashMap<>();
+	
+	private static Map<String, List<ShockNode>> OBJ_TO_NODES = new HashMap<>();
 	
 	@BeforeClass
 	public static void init() throws Exception {
@@ -108,12 +126,20 @@ public class HTMLFileSetServServerTest {
 		WS1 = new WorkspaceClient(new URL(wsURL), TOKEN1);
 		WS2 = new WorkspaceClient(new URL(wsURL), TOKEN2);
 		
+		SHOCK_URL = new URL(CONFIG.get("shock-url"));
+		HANDLE_URL = new URL(CONFIG.get("handle-service-url"));
+		
+		HANDLE = new AbstractHandleClient(
+				HANDLE_URL, TOKEN1);
+		
 		long suffix = System.currentTimeMillis();
 		final String wsName1 = "test_HTMLFileSetServ_" + suffix;
 		WS_READ = WS1.createWorkspace(new CreateWorkspaceParams()
 				.withWorkspace(wsName1));
+		System.out.println("Created test workspace " + WS_READ.getE2());
 		WS_PRIV = WS2.createWorkspace(new CreateWorkspaceParams()
 				.withWorkspace(wsName1 + "private"));
+		System.out.println("Created test workspace " + WS_PRIV.getE2());
 		WS1.setPermissions(new SetPermissionsParams().withId(WS_READ.getE1())
 				.withNewPermission("w")
 				.withUsers(Arrays.asList(TOKEN2.getUserName())));
@@ -183,6 +209,12 @@ public class HTMLFileSetServServerTest {
 	
 	@AfterClass
 	public static void tearDownClass() throws Exception {
+		final List<String> handlesToDelete = new LinkedList<>();
+		for (final Entry<String, NodeAndHandle> e: CREATED_NODES.entrySet()) {
+			e.getValue().node.delete();
+			handlesToDelete.add(e.getValue().handleID);
+		}
+		HANDLE.deleteHandles(HANDLE.hidsToHandles(handlesToDelete));
 		if (HTML_SERVER != null) {
 			System.out.print("Killing html server ... ");
 			HTML_SERVER.stopServer();
@@ -201,8 +233,8 @@ public class HTMLFileSetServServerTest {
 		}
 	}
 	
-	public static void loadTestData() throws Exception {
-		//workspace for user 1
+	private static void loadTestData() throws Exception {
+		// workspace for user 1
 		saveHTMLFileSet(WS1, WS_READ.getE1(), "html", "file1", "file.txt");
 		saveHTMLFileSet(WS1, WS_READ.getE1(), "html", "file2", "file.txt");
 		saveHTMLFileSet(WS1, WS_READ.getE1(), "cache", "cachefile",
@@ -218,12 +250,134 @@ public class HTMLFileSetServServerTest {
 						"thisisnotazipfile".getBytes()));
 		saveEmptyType(WS1, WS_READ.getE1(), "badtype");
 		
-		//private workspace for user 2
+		// private workspace for user 2
 		saveHTMLFileSet(WS2, WS_PRIV.getE1(), "html", "priv1", "file.txt");
 		saveRef(WS2, WS_PRIV.getE1(), "ref", WS_PRIV.getE1(), "html", 1);
 		saveRef(WS2, WS_READ.getE1(), "directRef", WS_PRIV.getE1(), "html", 1);
 		saveRef(WS2, WS_READ.getE1(), "indirectRef",
 				WS_PRIV.getE1(), "ref", 1);
+		
+		// KBaseReport.Report testing
+		final BasicShockClient bsc = new BasicShockClient(SHOCK_URL, TOKEN1);
+		
+		final ShockNode emptynode = bsc.addNode();
+		final String emptyhandle = makeHandle(emptynode);
+		CREATED_NODES.put(emptynode.getId().getId(),
+				new NodeAndHandle(emptynode, emptyhandle));
+		
+		final byte[] zip1 = makeZipFile("shock1", "shock1.txt");
+		final ShockNode node1 = bsc.addNode(new ByteArrayInputStream(zip1),
+				"shock1.zip", "zip");
+		final String handle1 = makeHandle(node1);
+		CREATED_NODES.put(node1.getId().getId(),
+				new NodeAndHandle(node1, handle1));
+
+		
+		final byte[] zip2 = makeZipFile("shock2", "shock2.txt");
+		final ShockNode node2 = bsc.addNode(new ByteArrayInputStream(zip2),
+				"shock2.zip", "zip");
+		final String handle2 = makeHandle(node2);
+		CREATED_NODES.put(node2.getId().getId(),
+				new NodeAndHandle(node2, handle2));
+
+		
+		saveKBaseReport(WS1, WS_READ.getE1(), "good2",
+				Arrays.asList(node1, node2));
+		saveKBaseReport(WS1, WS_READ.getE1(), "shocknofile2",
+				Arrays.asList(node1, emptynode));
+		OBJ_TO_NODES.put("nofile2", Arrays.asList(node1, emptynode));
+		saveHTMLLinkListToKBaseReport(WS1, WS_READ.getE1(), "nolinks", null);
+		saveHTMLLinkListToKBaseReport(WS1, WS_READ.getE1(), "emptylinks",
+				new LinkedList<>());
+		
+		saveShockURLToKBaseReport(WS1, WS_READ.getE1(), "shockbadsplit",
+				SHOCK_URL + "/nde/" + TEST_UUID, handle1);
+		saveShockURLToKBaseReport(WS1, WS_READ.getE1(), "shocknonode",
+				SHOCK_URL + "/node/" + TEST_UUID, handle1);
+		saveShockURLToKBaseReport(WS1, WS_READ.getE1(), "shockinvalidnode",
+				SHOCK_URL + "/node/" + TEST_BAD_UUID, handle1);
+		final String surl = SHOCK_URL.toString();
+		saveShockURLToKBaseReport(WS1, WS_READ.getE1(), "shockinvalidurl",
+				surl.replace("https", "htps") + "/node/" + TEST_UUID, handle1);
+		saveShockURLToKBaseReport(WS1, WS_READ.getE1(), "shockwrongurl",
+				surl.substring(0, surl.indexOf("/services/shock-api")) +
+				"/node/" + TEST_UUID, handle1);
+		
+	}
+	
+	private static void saveShockURLToKBaseReport(
+			final WorkspaceClient ws,
+			final long wsid,
+			final String objname,
+			final String url,
+			final String handleID)
+			throws Exception {
+		final List<Map<String, String>> files = new LinkedList<>();
+		final Map<String, String> file = new HashMap<>();
+		file.put("name", "foo");
+		file.put("URL", url);
+		file.put("handle", handleID);
+		files.add(file);
+		saveHTMLLinkListToKBaseReport(ws, wsid, objname, files);
+	}
+
+	private static class NodeAndHandle {
+		
+		public final ShockNode node;
+		public final String handleID;
+		
+		public NodeAndHandle(final ShockNode node, final String handleID) {
+			this.node = node;
+			this.handleID = handleID;
+		}
+	}
+
+	private static void saveKBaseReport(
+			final WorkspaceClient ws,
+			final long wsid,
+			final String objname,
+			final List<ShockNode> nodes)
+			throws Exception {
+		final List<Map<String, String>> files = new LinkedList<>();
+		for (final ShockNode sn: nodes) {
+			final Map<String, String> file = new HashMap<>();
+			file.put("name", "foo");
+			final String id = sn.getId().getId();
+			file.put("URL", SHOCK_URL + "/node/" + id);
+			file.put("handle", CREATED_NODES.get(id).handleID);
+			files.add(file);
+		}
+		saveHTMLLinkListToKBaseReport(ws, wsid, objname, files);
+		
+	}
+
+	private static void saveHTMLLinkListToKBaseReport(
+			final WorkspaceClient ws,
+			final long wsid,
+			final String objname,
+			final List<Map<String, String>> files)
+			throws IOException, JsonClientException {
+		final Map<String, Object> o = new HashMap<>();
+		if (files != null) {
+			o.put("html_links", files);
+		}
+		o.put("objects_created", new LinkedList<String>());
+		o.put("text_message", "foo");
+		ws.saveObjects(new SaveObjectsParams().withId(wsid)
+				.withObjects(Arrays.asList(new ObjectSaveData()
+						.withData(new UObject(o))
+						.withName(objname)
+						.withType("KBaseReport.Report-1.2"))
+						)
+				);
+	}
+
+	private static String makeHandle(final ShockNode node)
+			throws IOException, JsonClientException {
+		return HANDLE.persistHandle(new Handle()
+				.withId(node.getId().getId())
+				.withType("shock")
+				.withUrl(SHOCK_URL.toString()));
 	}
 
 	private static void saveRef(
@@ -269,6 +423,16 @@ public class HTMLFileSetServServerTest {
 			final String contents,
 			final String filename)
 			throws IOException, JsonClientException {
+		final byte[] zipfile = makeZipFile(contents, filename);
+		final String enc = Base64.getEncoder()
+				.encodeToString(zipfile);
+		saveEncodedZipFileToHTMLFileSet(ws, wsid, objname, enc);
+	}
+
+	private static byte[] makeZipFile(
+			final String contents,
+			final String filename)
+			throws IOException {
 		final ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		try (final ZipOutputStream zos = new ZipOutputStream(
 				baos, StandardCharsets.UTF_8);) {
@@ -278,9 +442,7 @@ public class HTMLFileSetServServerTest {
 			final byte[] b = contents.getBytes(StandardCharsets.UTF_8);
 			zos.write(b, 0, b.length);
 		}
-		final String enc = Base64.getEncoder()
-				.encodeToString(baos.toByteArray());
-		saveEncodedZipFileToHTMLFileSet(ws, wsid, objname, enc);
+		return baos.toByteArray();
 	}
 	
 	private static void saveEncodedZipFileToHTMLFileSet(
@@ -362,6 +524,22 @@ public class HTMLFileSetServServerTest {
 				WS_PRIV.getE1() + "/html/-/$/file.txt";
 		final String absref = WS_PRIV.getE1() + "/1/1";
 		testSuccess(path, absref, TOKEN1.getToken(), "priv1", "file.txt",
+				false);
+	}
+	
+	@Test
+	public void testSuccessReportIndex1() throws Exception {
+		final String path = "/" + WS_READ.getE2() + "/good2/-/$/0/shock1.txt";
+		final String absref = WS_READ.getE1() + "/11/1";
+		testSuccess(path, absref, TOKEN1.getToken(), "shock1", "0/shock1.txt",
+				false);
+	}
+	
+	@Test
+	public void testSuccessReportIndex2() throws Exception {
+		final String path = "/" + WS_READ.getE2() + "/good2/-/$/1/shock2.txt";
+		final String absref = WS_READ.getE1() + "/11/1";
+		testSuccess(path, absref, TOKEN1.getToken(), "shock2", "1/shock2.txt",
 				false);
 	}
 	
@@ -470,7 +648,7 @@ public class HTMLFileSetServServerTest {
 	
 	@Test
 	public void testFailNoPath() throws Exception {
-		testFail("", TOKEN1.getToken(), 404, "Not Found", false);
+		testFail("", TOKEN1.getToken(), 404, "Empty path", false);
 	}
 	
 	@Test
@@ -550,6 +728,111 @@ public class HTMLFileSetServServerTest {
 				WS_PRIV.getE1() + "/html/-/$/file.txt";
 		testFail(path, TOKEN1.getToken(), 404, "Not Found", false);
 	}
+	
+	@Test
+	public void testFailReportIndexOOB() throws Exception {
+		final String path = "/" + WS_READ.getE2() + "/good2/-/$/2/shock2.txt";
+		testFail(path, TOKEN1.getToken(), 404, "Zip identifier 2 exceeds " +
+				"number of zip files in KBaseReport list", false);
+	}
+
+	@Test
+	public void testFailReportNoSuchFile() throws Exception {
+		final String path = "/" + WS_READ.getE2() + "/good2/-/$/1/shock1.txt";
+		testFail(path, TOKEN1.getToken(), 404, "Not Found", false);
+	}
+	
+	@Test
+	public void testFailReportWsException() throws Exception {
+		// most ws exceptions are tested for htmlfileset
+		final String path = "/" + WS_READ.getE2() + "/good3/-/$/1/shock1.txt";
+		testFail(path, TOKEN1.getToken(), 404,
+				"No object with name good3 exists in workspace " +
+						WS_READ.getE1(), false);
+	}
+	
+	@Test
+	public void testFailReportIndexString() throws Exception {
+		final String path = "/" + WS_READ.getE2() + "/good2/-/$/bl/shock2.txt";
+		testFail(path, TOKEN1.getToken(), 400, "The zip identifier section " +
+				"of the path must be a non-negative integer", false);
+	}
+	
+	@Test
+	public void testFailReportIndexNegInt() throws Exception {
+		final String path = "/" + WS_READ.getE2() + "/good2/-/$/-1/shock2.txt";
+		testFail(path, TOKEN1.getToken(), 400, "The zip identifier section " +
+				"of the path must be a non-negative integer", false);
+	}
+	
+	@Test
+	public void testFailReportIndexNoLinks() throws Exception {
+		final String path = "/" + WS_READ.getE2() + "/nolinks/-/$/0/shock1.txt";
+		testFail(path, TOKEN1.getToken(), 404,
+				"This KBase report does not contain html links", false);
+	}
+	
+	@Test
+	public void testFailReportIndexEmptyLinks() throws Exception {
+		final String path = "/" + WS_READ.getE2() +
+				"/emptylinks/-/$/0/shock1.txt";
+		testFail(path, TOKEN1.getToken(), 404,
+				"This KBase report does not contain html links", false);
+	}
+	
+	@Test
+	public void testFailReportNoShockFile() throws Exception {
+		final String path = "/" + WS_READ.getE2() +
+				"/shocknofile2/-/$/1/shock2.txt";
+		final String node = OBJ_TO_NODES.get("nofile2").get(1).getId().getId();
+		testFail(path, TOKEN1.getToken(), 500, String.format(
+				"The shock node %s has no file", node), false);
+	}
+	
+	@Test
+	public void testFailReportBadURLSplit() throws Exception {
+		final String path = "/" + WS_READ.getE2() +
+				"/shockbadsplit/-/$/0/shock2.txt";
+		testFail(path, TOKEN1.getToken(), 500, String.format(
+				"Invalid shock node url: %s/nde/%s", SHOCK_URL, TEST_UUID),
+				false);
+	}
+	
+	@Test
+	public void testFailReportNoShockNode() throws Exception {
+		final String path = "/" + WS_READ.getE2() +
+				"/shocknonode/-/$/0/shock2.txt";
+		testFail(path, TOKEN1.getToken(), 500, String.format(
+				"No such shock node: %s", TEST_UUID), false);
+	}
+	
+	@Test
+	public void testFailReportBadShockNodeID() throws Exception {
+		final String path = "/" + WS_READ.getE2() +
+				"/shockinvalidnode/-/$/0/shock2.txt";
+		testFail(path, TOKEN1.getToken(), 500, String.format(
+				"Invalid shock node ID: %s", TEST_BAD_UUID), false);
+	}
+	
+	@Test
+	public void testFailReportBadShockURL() throws Exception {
+		final String path = "/" + WS_READ.getE2() +
+				"/shockinvalidurl/-/$/0/shock2.txt";
+		testFail(path, TOKEN1.getToken(), 500, String.format(
+				"Invalid shock URL: %s",
+				SHOCK_URL.toString().replace("https", "htps")) + "/", false);
+	}
+	
+	@Test
+	public void testFailReportWrongShockURL() throws Exception {
+		final String path = "/" + WS_READ.getE2() +
+				"/shockwrongurl/-/$/0/shock2.txt";
+		final String surl = SHOCK_URL.toString();
+		testFail(path, TOKEN1.getToken(), 500, String.format(
+				"Invalid shock URL: %s",
+				surl.substring(0, surl.indexOf("/services/shock-api"))) + "/",
+				false);
+	}
 
 	private void testFail(
 			final String path,
@@ -558,6 +841,7 @@ public class HTMLFileSetServServerTest {
 			String error,
 			final Boolean headerAuth)
 			throws Exception {
+		logStartTest();
 		final URL u = new URL(HTTP_ENDPOINT.toString() + path);
 		final HttpURLConnection hc = (HttpURLConnection) u.openConnection();
 		if (headerAuth == null) {
@@ -601,6 +885,7 @@ public class HTMLFileSetServServerTest {
 			final String filename,
 			final Boolean headerAuth)
 			throws Exception {
+		logStartTest();
 		final URL u = new URL(HTTP_ENDPOINT.toString() + path);
 		final HttpURLConnection hc = (HttpURLConnection) u.openConnection();
 		if (headerAuth == null) {
@@ -638,6 +923,25 @@ public class HTMLFileSetServServerTest {
 		assertNoTempFilesLeftOnDisk();
 	}
 
+	private void logStartTest() {
+		final Exception e = new Exception();
+		e.fillInStackTrace();
+		String method = null;
+		for (int i = 1; i < 4; i++) {
+			final String mn = e.getStackTrace()[i].getMethodName();
+			if (!mn.equals("testFail") && !mn.equals("testSuccess")) {
+				method = mn;
+				break;
+			}
+		}
+		if (method == null) {
+			throw new TestException("Couldn't get test method name");
+		}
+		System.out.println("\n******************************************\n*");
+		System.out.println("* Starting test " + method);
+		System.out.println("*\n******************************************");
+	}
+	
 	private void assertNoTempFilesLeftOnDisk() throws IOException {
 		final List<Path> tempfiles = new LinkedList<>();
 		Files.newDirectoryStream(SCRATCH.resolve("temp"))

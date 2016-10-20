@@ -57,13 +57,22 @@ import us.kbase.common.service.JsonClientException;
 import us.kbase.common.service.JsonServerServlet;
 import us.kbase.common.service.JsonServerSyslog;
 import us.kbase.common.service.JsonServerSyslog.SyslogOutput;
+import us.kbase.shock.client.BasicShockClient;
+import us.kbase.shock.client.ShockNodeId;
+import us.kbase.shock.client.exceptions.InvalidShockUrlException;
+import us.kbase.shock.client.exceptions.ShockHttpException;
+import us.kbase.shock.client.exceptions.ShockNoFileException;
+import us.kbase.shock.client.exceptions.ShockNoNodeException;
 import us.kbase.common.service.JsonTokenStream;
 import us.kbase.common.service.ServerException;
 import us.kbase.common.service.Tuple11;
 import us.kbase.common.service.UObject;
 import us.kbase.common.service.UnauthorizedException;
+import us.kbase.typedobj.core.AbsoluteTypeDefId;
 import us.kbase.typedobj.core.TypeDefName;
 import us.kbase.workspace.GetObjectInfoNewParams;
+import us.kbase.workspace.GetObjects2Params;
+import us.kbase.workspace.ObjectData;
 import us.kbase.workspace.ObjectSpecification;
 import us.kbase.workspace.WorkspaceClient;
 
@@ -86,12 +95,10 @@ import us.kbase.workspace.WorkspaceClient;
 public class HTMLFileSetHTTPServer extends HttpServlet {
 	
 	//TODO TESTS
-	//TODO ZZLATER cache reaper - need to keep date of last access in mem
+	//TODO ZZLATER cache reaper - need to keep date of last access & directory size (calculate during creation) in mem
 	//TODO ZZLATER UI guys / thomason help with error page - defer indefinitely per Bill
-	//TODO ZZEXTERNAL dynamic service logs should be restricted to admins
 	//TODO ZZEXTERNAL dynamic services should have data mounts
-	//TODO ZZEXTERNAL BLOCKER Rancher passes on path
-	//TODO ZZEXTERNAL BLOCKER red team Report definition
+	//TODO ZZEXTERNAL BLOCKER kbase tokens are a garbled mess
 	
 	private final static String SERVICE_NAME = "HTMLFileSetServ";
 	private static final String X_FORWARDED_FOR = "X-Forwarded-For";
@@ -104,10 +111,6 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	private static final String TOKEN_COOKIE_NAME = "kbase_session";
 	private static final String ERROR_PAGE_PACKAGE = "htmlfilesetserv";
 	private static final String ERROR_PAGE_NAME = "error.mustache";
-	
-	private static final String TYPE_HTMLFILESET =
-			"HTMLFileSetUtils.HTMLFileSet";
-	
 	
 	private static final Map<Integer, String> codeToLine = new HashMap<>();
 	static {
@@ -136,14 +139,18 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	
 		TypeDefName getHandledType();
 		
-		Path getCachePathStuffix(Path zipFilePath);
+		Path getZipFileIdentifier(Path zipFilePath)
+				throws ZipIdentifierException;
 		
 		void getZipFile(
-				Path cachePathSuffix,
+				AbsoluteTypeDefId type,
+				Path zipFilePath,
 				List<String> workspaceRefPath,
 				Path zipfile,
 				AuthToken token)
-				throws IOException, ServerException, CorruptDataException;
+				throws IOException, ServerException, CorruptDataException,
+					ZipIdentifierException, NotFoundException,
+					DataRetrievalException;
 	}
 	
 	private static class HTMLFileSetHandler implements TypeHandler {
@@ -165,13 +172,14 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		}
 
 		@Override
-		public Path getCachePathStuffix(Path zipFilePath) {
+		public Path getZipFileIdentifier(final Path zipFilePath) {
 			return Paths.get(".");
 		}
 
 		@Override
 		public void getZipFile(
-				final Path cachePathSuffix,
+				final AbsoluteTypeDefId type,
+				final Path zipFilePath,
 				final List<String> workspaceRefPath,
 				final Path zipfile,
 				final AuthToken token) throws IOException, ServerException,
@@ -207,8 +215,106 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		
 	}
 
-	// could make custom 404 page at some point
-	// http://www.eclipse.org/jetty/documentation/current/custom-error-pages.html
+	private static class KBaseReportHandler implements TypeHandler {
+
+		private final static TypeDefName TYPE = new TypeDefName(
+				"KBaseReport", "Report");
+		
+		private final URL wsURL;
+		
+		public KBaseReportHandler(final URL workspaceURL) {
+			wsURL = workspaceURL;
+		}
+		
+		@Override
+		public TypeDefName getHandledType() {
+			return TYPE;
+		}
+
+		@Override
+		public Path getZipFileIdentifier(final Path zipFilePath)
+				throws ZipIdentifierException {
+			getZipIndex(zipFilePath); //checks validity of zipfile id
+			return zipFilePath.getName(0);
+		}
+
+		private int getZipIndex(final Path zipFilePath)
+				throws ZipIdentifierException {
+			final int index;
+			try {
+				index = Integer.parseInt(zipFilePath.getName(0).toString());
+			} catch (NumberFormatException e) {
+				throw new ZipIdentifierException("The zip identifier " +
+						"section of the path must be a non-negative integer",
+						e);
+			}
+			if (index < 0) {
+				throw new ZipIdentifierException("The zip identifier " +
+						"section of the path must be a non-negative integer");
+			}
+			return index;
+		}
+
+		@Override
+		public void getZipFile(
+				final AbsoluteTypeDefId type,
+				final Path zipFilePath,
+				final List<String> workspaceRefPath,
+				final Path zipfile,
+				final AuthToken token) throws IOException, ServerException,
+					CorruptDataException, ZipIdentifierException,
+					NotFoundException, DataRetrievalException {
+			final String shockNodeURL = getShockNodeURL(
+					type, zipFilePath, workspaceRefPath, token);
+			final String[] shockURLAndNode = shockNodeURL.split("node/");
+			if (shockURLAndNode.length != 2) {
+				throw new CorruptDataException("Invalid shock node url: " +
+						shockNodeURL);
+			}
+			downloadZipFileFromShock(shockURLAndNode[0], shockURLAndNode[1],
+					zipfile, token);
+		}
+
+		private String getShockNodeURL(
+				final AbsoluteTypeDefId type,
+				final Path zipFilePath,
+				final List<String> workspaceRefPath,
+				final AuthToken token)
+				throws ZipIdentifierException, IOException, ServerException,
+					CorruptDataException, NotFoundException,
+					DataRetrievalException {
+			final int index = getZipIndex(zipFilePath);
+			final Map<String, Object> rep = getObject(
+					wsURL, workspaceRefPath, type, token);
+			@SuppressWarnings("unchecked")
+			final List<Map<String, String>> htmlLinks =
+					(List<Map<String, String>>) rep.get("html_links");
+			if (htmlLinks == null || htmlLinks.isEmpty()) {
+				throw new NotFoundException(
+						"This KBase report does not contain html links");
+				
+			}
+			if (index >= htmlLinks.size()) {
+				throw new NotFoundException(String.format(
+						"Zip identifier %s exceeds number of zip files in " +
+						"KBaseReport list", index));
+			}
+			return htmlLinks.get(index).get("URL");
+		}
+	}
+	
+	public static class ZipIdentifierException extends Exception {
+		
+		public ZipIdentifierException(final String message) {
+			super(message);
+		}
+
+		public ZipIdentifierException(
+				final String message,
+				final Throwable cause) {
+			super(message, cause);
+		}
+	}
 	
 	/**
 	 * Creates a new HTMLFileSet server
@@ -256,8 +362,10 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		template = mf.compile(ERROR_PAGE_NAME);
 		
 		final HTMLFileSetHandler hfsh = new HTMLFileSetHandler(wsURL, temp);
+		final KBaseReportHandler kbrh = new KBaseReportHandler(wsURL);
 		
 		handlers.put(hfsh.getHandledType(), hfsh);
+		handlers.put(kbrh.getHandledType(), kbrh);
 	}
 
 	private void deleteDirectoryAndContents(final Path dir)
@@ -454,7 +562,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		String path = request.getPathInfo();
 		
 		if (path == null || path.trim().isEmpty()) { // e.g. /api/v1
-			handleErr(404, "Not Found", ri, response);
+			handleErr(404, "Empty path", ri, response);
 			return;
 		}
 		if (path.endsWith("/")) { // e.g. /docs/
@@ -467,16 +575,17 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		try {
 			local = setUpCache(path, token, ri);
 		} catch (NotFoundException e) {
-			handleErr(404, "Not Found", ri, response);
+			handleErr(404, e, ri, response);
 			return;
-		} catch (IOException e) {
+		} catch (IOException | CorruptDataException |
+				DataRetrievalException e) {
 			handleErr(500, e, ri, response);
 			return;
 		} catch (ServerException e) {
 			handleWSServerError(ri, e, response);
 			return;
-		} catch (CorruptDataException e) {
-			handleErr(500, e, ri, response);
+		} catch (ZipIdentifierException e) {
+			handleErr(400, e, ri, response);
 			return;
 		}
 		
@@ -585,58 +694,62 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		return null;
 	}
 
-	private static class NotFoundException extends Exception {}
+	private static class NotFoundException extends Exception {
+		
+		public NotFoundException() {
+			super("Not Found");
+		}
+		
+		public NotFoundException(final String message) {
+			super(message);
+		}
+		
+	}
 	
 	private Path setUpCache(
 			final String path,
 			final AuthToken token,
 			final RequestInfo ri)
 			throws NotFoundException, IOException, ServerException,
-			CorruptDataException {
+			CorruptDataException, ZipIdentifierException,
+			DataRetrievalException {
 		final ResolvedPaths refsAndPath = splitRefsAndPath(path);
+		final List<String> refpath = refsAndPath.refpath;
 
-		final String absref = getAbsoluteRef(refsAndPath.refpath, token);
+		final AbsRefAndType absrefAndType =
+				getAbsoluteRef(refpath, token);
+		final String absref = absrefAndType.absref;
+		refpath.set(refpath.size() - 1, absref);
+		final TypeHandler handler = handlers.get(absrefAndType.type.getType());
+		if (handler == null) {
+			throw new ServerException(String.format(
+					"The type %s cannot be processed by this service",
+					absrefAndType.type.getTypePrefix()), -1, "TypeError");
+		}
+		final Path zipID = handler.getZipFileIdentifier(refsAndPath.path);
 		
-		final Path rootpath = cachePath.resolve(absref);
-		final Path filepath = rootpath.resolve(refsAndPath.path);
+		final Path cacheLoc = cachePath.resolve(absref).resolve(zipID);
+		final Path filepath = cachePath.resolve(absref)
+				.resolve(refsAndPath.path);
 		synchronized (this) {
 			if (!locks.containsKey(absref)) {
 				locks.put(absref, new Object());
 			}
 		}
 		synchronized (locks.get(absref)) {
-			if (Files.isDirectory(rootpath)) {
+			if (Files.isDirectory(cacheLoc)) {
 				logMessage("Using cache for object " + absref, ri);
 				return filepath;
 			}
+			
 			final String absrefSafe = absref.replace("/", "_");
-			Path tf = null;
-			Path enc = null;
 			Path zip = null;
 			try {
-				tf = Files.createTempFile(
-						temp, "wsobj." + absrefSafe + ".", ".json.tmp");
-				refsAndPath.refpath.set(refsAndPath.refpath.size() - 1, absref);
-				final UObject uo = saveObjectToFile(wsURL, 
-						refsAndPath.refpath, token, tf);
-				enc = Files.createTempFile(
-						temp, "encoded." + absrefSafe + ".", ".zip.b64.tmp");
-				try (final JsonTokenStream jts = uo.getPlacedStream();) {
-					jts.close();
-					jts.setRoot(Arrays.asList(
-							"result", "0", "data", "0", "data", "file"));
-					jts.writeJson(enc.toFile());
-				}
 				zip = Files.createTempFile(temp, absrefSafe + ".", ".zip.tmp");
-				base64DecodeJsonString(enc, zip);
-				unzip(rootpath, zip);
+				handler.getZipFile(absrefAndType.type, refsAndPath.path,
+						refpath, zip, token);
+				unzip(cacheLoc, zip);
 			} finally {
-				if (tf != null) {
-					Files.delete(tf);
-				}
-				if (enc != null) {
-					Files.delete(enc);
-				}
 				if (zip != null) {
 					Files.delete(zip);
 				}
@@ -662,6 +775,10 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	
 	public static class CorruptDataException extends Exception {
 		
+		public CorruptDataException(final String message) {
+			super(message);
+		}
+		
 		public CorruptDataException(
 				final String message,
 				final Throwable cause) {
@@ -669,11 +786,53 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		}
 	}
 	
-	private String getAbsoluteRef(
+	public static class DataRetrievalException extends Exception {
+		
+		public DataRetrievalException(final String message) {
+			super(message);
+		}
+		
+		public DataRetrievalException(
+				final String message,
+				final Throwable cause) {
+			super(message, cause);
+		}
+	}
+	
+	private AbsRefAndType getAbsoluteRef(
 			final List<String> refpath,
 			final AuthToken token)
 			throws IOException, ServerException {
 		
+		final WorkspaceClient ws = getWorkspaceClient(wsURL, token);
+		
+		try {
+			final ObjectSpecification os = buildObjectSpecification(refpath);
+			final Tuple11<Long, String, String, String, Long, String, Long,
+				String, String, Long, Map<String, String>> info =
+					ws.getObjectInfoNew(new GetObjectInfoNewParams()
+							.withIncludeMetadata(0L)
+							.withObjects(Arrays.asList(os)))
+					.get(0);
+			final AbsoluteTypeDefId type = AbsoluteTypeDefId
+					.fromAbsoluteTypeString(info.getE3());
+			final String absref =  info.getE7() + "/" + info.getE1() + "/" +
+					info.getE5();
+			return new AbsRefAndType(absref, type);
+		} catch (JsonClientException e) {
+			if (e instanceof ServerException) {
+				throw (ServerException) e;
+			}
+			// should never happen - indicates result couldn't be parsed
+			throw new RuntimeException("Something is very badly wrong with " +
+					"the workspace server", e);
+		}
+	}
+
+	private static WorkspaceClient getWorkspaceClient(
+			final URL wsURL,
+			final AuthToken token)
+			throws IOException {
 		final WorkspaceClient ws;
 		if (token == null) {
 			ws = new WorkspaceClient(wsURL);
@@ -684,29 +843,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 				throw new RuntimeException("This is impossible, neat", e);
 			}
 		}
-		
-		try {
-			final ObjectSpecification os = buildObjectSpecification(refpath);
-			final Tuple11<Long, String, String, String, Long, String, Long,
-				String, String, Long, Map<String, String>> info =
-					ws.getObjectInfoNew(new GetObjectInfoNewParams()
-							.withIncludeMetadata(0L)
-							.withObjects(Arrays.asList(os)))
-					.get(0);
-			if (!info.getE3().startsWith(TYPE_HTMLFILESET)) {
-				throw new ServerException(String.format(
-						"The type %s cannot be processed by this service",
-						info.getE3()), -1, "TypeError");
-			}
-			return info.getE7() + "/" + info.getE1() + "/" + info.getE5();
-		} catch (JsonClientException e) {
-			if (e instanceof ServerException) {
-				throw (ServerException) e;
-			}
-			// should never happen - indicates result couldn't be parsed
-			throw new RuntimeException("Something is very badly wrong with " +
-					"the workspace server", e);
-		}
+		return ws;
 	}
 
 	private static ObjectSpecification buildObjectSpecification(
@@ -779,6 +916,47 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		}
 	}
 
+	private static Map<String, Object> getObject(
+			final URL wsURL,
+			final List<String> refPath,
+			final AbsoluteTypeDefId type,
+			final AuthToken token)
+			throws IOException, ServerException, CorruptDataException,
+				DataRetrievalException {
+		final WorkspaceClient ws = getWorkspaceClient(wsURL, token);
+
+		try {
+			final ObjectData obj = ws.getObjects2(
+					new GetObjects2Params().withObjects(Arrays.asList(
+							buildObjectSpecification(refPath))))
+					.getData().get(0);
+
+			// not really any way to test the next two if statements without
+			// setting up an insane test rig
+			if (!obj.getInfo().getE3().equals(type.getTypePrefix())) {
+				throw new CorruptDataException("Workspace type changed " +
+						"between calls, something is very wrong");
+			}
+			if (obj.getHandleError() != null ||
+					obj.getHandleStacktrace() != null) {
+				throw new DataRetrievalException(String.format(
+						"Workspace reported a handle error: %s\n%s",
+						obj.getHandleError(), obj.getHandleStacktrace()));
+			}
+			@SuppressWarnings("unchecked")
+			final Map<String, Object> o = obj.getData()
+					.asClassInstance(Map.class);
+			return o;
+		} catch (JsonClientException e) {
+			if (e instanceof ServerException) {
+				throw (ServerException) e;
+			}
+			// should never happen - indicates result couldn't be parsed
+			throw new RuntimeException("Something is very badly wrong with " +
+					"the workspace server", e);
+		}
+	}
+	
 	private static UObject saveObjectToFile(
 			final URL wsURL,
 			final List<String> refpath,
@@ -798,9 +976,8 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		ws.setFileForNextRpcResponse(tempfile.toFile());
 		final Map<String, List<ObjectSpecification>> arg = new HashMap<>();
 		arg.put("objects", Arrays.asList(buildObjectSpecification(refpath)));
-		final UObject uo;
 		try {
-			uo = ws.jsonrpcCall("Workspace.get_objects2", Arrays.asList(arg),
+			return ws.jsonrpcCall("Workspace.get_objects2", Arrays.asList(arg),
 					new TypeReference<UObject>() {}, true, false);
 		} catch (JsonClientException e) {
 			if (e instanceof ServerException) {
@@ -810,7 +987,49 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			throw new RuntimeException("Something is very badly wrong with " +
 					"the workspace server", e);
 		}
-		return uo;
+	}
+	
+
+	private static void downloadZipFileFromShock(
+			final String shockURLString,
+			final String shockNode,
+			final Path zipfile,
+			final AuthToken token)
+			throws CorruptDataException, IOException, DataRetrievalException {
+		final URL shockURL;
+		try {
+			shockURL = new URL(shockURLString);
+		} catch (MalformedURLException e) {
+			throw new CorruptDataException("Invalid shock URL: " +
+					shockURLString, e);
+		}
+		final BasicShockClient bsc;
+		try {
+			bsc = new BasicShockClient(shockURL);
+		} catch (InvalidShockUrlException e) {
+			throw new CorruptDataException("Invalid shock URL: " +
+					shockURL, e);
+		}
+		// adding the token later prevents the client from creating and
+		// deleting a shock node on startup
+		bsc.updateToken(token);
+		try (final OutputStream out = new BufferedOutputStream(
+				Files.newOutputStream(zipfile))) {
+			bsc.getFile(new ShockNodeId(shockNode), out);
+		} catch (ShockNoNodeException e) {
+			throw new CorruptDataException("No such shock node: " +
+					shockNode, e);
+		} catch (ShockNoFileException e) {
+			throw new CorruptDataException(String.format(
+					"The shock node %s has no file", shockNode, e));
+		} catch (ShockHttpException e) {
+			// no reasonable way to test this, something's seriously screwed up
+			throw new DataRetrievalException(
+					"Unable to download zip file from shock", e);
+		} catch (IllegalArgumentException e) {
+			throw new CorruptDataException("Invalid shock node ID: " +
+					shockNode, e);
+		}
 	}
 	
 	private static class ResolvedPaths {
@@ -822,6 +1041,20 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			super();
 			this.refpath = refpath;
 			this.path = path;
+		}
+	}
+	
+	private static class AbsRefAndType {
+		
+		public final String absref;
+		public final AbsoluteTypeDefId type;
+		
+		public AbsRefAndType(
+				final String absref,
+				final AbsoluteTypeDefId type) {
+			super();
+			this.absref = absref;
+			this.type = type;
 		}
 	}
 
@@ -914,5 +1147,4 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	public static void main(String[] args) throws Exception {
 		new HTMLFileSetHTTPServer().startupServer(10000);
 	}
-	
 }
