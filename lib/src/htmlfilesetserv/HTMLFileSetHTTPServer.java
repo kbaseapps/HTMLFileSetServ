@@ -7,9 +7,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintStream;
+import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -687,10 +689,27 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		if (request.getCookies() != null) {
 			for (final Cookie c: request.getCookies()) {
 				if (c.getName().equals(TOKEN_COOKIE_NAME)) {
-					return auth.validateToken(c.getValue());
+					return auth.validateToken(
+							unmungeCookiePerShane(c.getValue()));
 				}
 			}
 		}
+		return null;
+	}
+
+	private String unmungeCookiePerShane(final String cookie) {
+		if (true) {
+			System.out.println("got cookie: " + cookie);
+			return cookie; //TODO NOW remove
+		}
+		String t;
+		try {
+			t = URLDecoder.decode(cookie, StandardCharsets.UTF_8.name());
+		} catch (UnsupportedEncodingException e) {
+			throw new RuntimeException("This should be impossible", e);
+		}
+//		for String in 
+		// TODO Auto-generated method stub
 		return null;
 	}
 

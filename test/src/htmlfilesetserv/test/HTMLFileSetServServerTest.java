@@ -9,10 +9,12 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UnsupportedEncodingException;
 import java.net.CookieHandler;
 import java.net.CookieManager;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -61,6 +63,7 @@ import us.kbase.workspace.WorkspaceIdentity;
 public class HTMLFileSetServServerTest {
 	
 	private static AuthToken TOKEN1;
+	private static String TOKEN1_MUNGED;
 	private static AuthToken TOKEN2;
 	private static Map<String, String> CONFIG = null;
 	
@@ -107,6 +110,9 @@ public class HTMLFileSetServServerTest {
 			throw new TestException(
 					"test property test_user2_token not supplied");
 		}
+		TOKEN1_MUNGED = mungeTokenPerShane(TOKEN1);
+		TOKEN1_MUNGED = TOKEN1.getToken(); //TODO NOW remove
+		
 		//TODO TEST AUTH make configurable?
 		TOKEN2 = AuthService.validateToken(t2);
 		if (TOKEN1.getUserName().equals(TOKEN2.getUserName())) {
@@ -155,6 +161,17 @@ public class HTMLFileSetServServerTest {
 		loadTestData();
 	}
 	
+	private static String mungeTokenPerShane(final AuthToken token)
+			throws UnsupportedEncodingException {
+		String t = token.getToken().replace("=", "EQUALSSIGN")
+				.replace("|", "PIPESIGN");
+		t = String.format("un=%s|kbase_sessionid=%s|user_id=%s|token=%s",
+				token.getUserName(), UUID.randomUUID(), token.getUserName(),
+				token.getToken());
+		
+		return URLEncoder.encode(t, StandardCharsets.UTF_8.name());
+	}
+
 	private static HTMLFileSetHTTPServer startupHTMLServer(
 			final String wsURL)
 			throws Exception {
@@ -477,14 +494,14 @@ public class HTMLFileSetServServerTest {
 	public void testSuccessIDsLatestVerCookie() throws Exception {
 		final String path = "/" + WS_READ.getE1() + "/1/-/$/file.txt";
 		final String absref = WS_READ.getE1() + "/1/2";
-		testSuccess(path, absref, TOKEN1.getToken(), "file2", false);
+		testSuccess(path, absref, TOKEN1_MUNGED, "file2", false);
 	}
 	
 	@Test
 	public void testSuccessNamesFirstVerHeader() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/html/1/$/file.txt";
 		final String absref = WS_READ.getE1() + "/1/1";
-		testSuccess(path, absref, TOKEN1.getToken(), "file1", true);
+		testSuccess(path, absref, TOKEN1_MUNGED, "file1", true);
 	}
 	
 	@Test
@@ -505,17 +522,17 @@ public class HTMLFileSetServServerTest {
 	public void testSuccessCache() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/cache/1/$/file.txt";
 		final String absref = WS_READ.getE1() + "/2/1";
-		testSuccess(path, absref, TOKEN1.getToken(), "cachefile", true);
+		testSuccess(path, absref, TOKEN1_MUNGED, "cachefile", true);
 		//there's not really any way to easily ensure the code is reading
 		//from the cache...
-		testSuccess(path, absref, TOKEN1.getToken(), "cachefile", true);
+		testSuccess(path, absref, TOKEN1_MUNGED, "cachefile", true);
 	}
 	
 	@Test
 	public void testSuccessIndexDotHtml() throws Exception {
 		final String path = "/" + WS_READ.getE1() + "/index/-/$/";
 		final String absref = WS_READ.getE1() + "/3/1";
-		testSuccess(path, absref, TOKEN1.getToken(), "indexfile", "index.html",
+		testSuccess(path, absref, TOKEN1_MUNGED, "indexfile", "index.html",
 				false);
 	}
 	
@@ -524,7 +541,7 @@ public class HTMLFileSetServServerTest {
 		final String path = "/" + WS_READ.getE1() + "/directRef/-/" +
 				WS_PRIV.getE1() + "/html/1/$/file.txt";
 		final String absref = WS_PRIV.getE1() + "/1/1";
-		testSuccess(path, absref, TOKEN1.getToken(), "priv1", "file.txt",
+		testSuccess(path, absref, TOKEN1_MUNGED, "priv1", "file.txt",
 				false);
 	}
 	
@@ -534,7 +551,7 @@ public class HTMLFileSetServServerTest {
 				WS_PRIV.getE1() + "/ref/1/" +
 				WS_PRIV.getE1() + "/html/-/$/file.txt";
 		final String absref = WS_PRIV.getE1() + "/1/1";
-		testSuccess(path, absref, TOKEN1.getToken(), "priv1", "file.txt",
+		testSuccess(path, absref, TOKEN1_MUNGED, "priv1", "file.txt",
 				false);
 	}
 	
@@ -542,7 +559,7 @@ public class HTMLFileSetServServerTest {
 	public void testSuccessReportIndex1() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/good2/-/$/0/shock1.txt";
 		final String absref = WS_READ.getE1() + "/11/1";
-		testSuccess(path, absref, TOKEN1.getToken(), "shock1", "0/shock1.txt",
+		testSuccess(path, absref, TOKEN1_MUNGED, "shock1", "0/shock1.txt",
 				false);
 	}
 	
@@ -550,14 +567,14 @@ public class HTMLFileSetServServerTest {
 	public void testSuccessReportIndex2() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/good2/-/$/1/shock2.txt";
 		final String absref = WS_READ.getE1() + "/11/1";
-		testSuccess(path, absref, TOKEN1.getToken(), "shock2", "1/shock2.txt",
+		testSuccess(path, absref, TOKEN1_MUNGED, "shock2", "1/shock2.txt",
 				false);
 	}
 	
 	@Test
 	public void testFailNoRead() throws Exception {
 		final String path = "/" + WS_PRIV.getE1() + "/html/-/$/file.txt";
-		testFail(path, TOKEN1.getToken(), 403, String.format(
+		testFail(path, TOKEN1_MUNGED, 403, String.format(
 				"Object html cannot be accessed: User %s may not " +
 				"read workspace %s",
 				TOKEN1.getUserName(), WS_PRIV.getE1()), false);
@@ -566,9 +583,7 @@ public class HTMLFileSetServServerTest {
 	@Test
 	public void testFailBadAuthCookie() throws Exception {
 		final String path = "/" + WS_PRIV.getE1() + "/html/-/$/file.txt";
-		testFail(path, "whee", 401, String.format(
-				"Login failed! Invalid token",
-				TOKEN1.getUserName(), WS_READ.getE1()), false);
+		testFail(path, "whee", 401, "Login failed! Invalid token", false);
 	}
 	
 	@Test
@@ -588,9 +603,41 @@ public class HTMLFileSetServServerTest {
 	}
 	
 	@Test
+	public void testFailAuthNullHeader() throws Exception {
+		final String path = "/" + WS_READ.getE2() + "/html/-/$/file.txt";
+		testFail(path, null, 403, String.format(
+				"Object html cannot be accessed: Anonymous users may not " +
+				"read workspace %s", WS_READ.getE2()), true);
+	}
+
+	@Test
+	public void testFailAuthNullCookie() throws Exception {
+		// just winds up with the string "null" server side
+		final String path = "/" + WS_READ.getE2() + "/html/-/$/file.txt";
+		testFail(path, null, 401, "Login failed! Invalid token", false);
+	}
+	
+	@Test
+	public void testFailAuthEmptyHeader() throws Exception {
+		final String path = "/" + WS_READ.getE2() + "/html/-/$/file.txt";
+		testFail(path, "", 403, String.format(
+				"Object html cannot be accessed: Anonymous users may not " +
+				"read workspace %s", WS_READ.getE2()), true);
+	}
+
+	@Test
+	public void testFailAuthEmptyCookie() throws Exception {
+		// appears that the cookie isn't received at all if the value is empty
+		final String path = "/" + WS_READ.getE2() + "/html/-/$/file.txt";
+		testFail(path, "", 403, String.format(
+				"Object html cannot be accessed: Anonymous users may not " +
+				"read workspace %s", WS_READ.getE2()), false);
+	}
+	
+	@Test
 	public void testFailNoSuchVersion() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/html/3/$/file.txt";
-		testFail(path, TOKEN1.getToken(), 404, String.format(
+		testFail(path, TOKEN1_MUNGED, 404, String.format(
 				"No object with id 1 (name html) and version 3 exists in " +
 				"workspace %s", WS_READ.getE1()), false);
 	}
@@ -598,7 +645,7 @@ public class HTMLFileSetServServerTest {
 	@Test
 	public void testFailNoSuchObjectID() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/1000/-/$/file.txt";
-		testFail(path, TOKEN1.getToken(), 404, String.format(
+		testFail(path, TOKEN1_MUNGED, 404, String.format(
 				"No object with id 1000 exists in workspace %s",
 				WS_READ.getE1()), false);
 	}
@@ -606,7 +653,7 @@ public class HTMLFileSetServServerTest {
 	@Test
 	public void testFailNoSuchObjectName() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/nope/-/$/file.txt";
-		testFail(path, TOKEN1.getToken(), 404, String.format(
+		testFail(path, TOKEN1_MUNGED, 404, String.format(
 				"No object with name nope exists in workspace %s",
 				WS_READ.getE1()), false);
 	}
@@ -614,7 +661,7 @@ public class HTMLFileSetServServerTest {
 	@Test
 	public void testFailNoSuchWorkspaceID() throws Exception {
 		final String path = "/100000000/html/-/$/file.txt";
-		testFail(path, TOKEN1.getToken(), 404,
+		testFail(path, TOKEN1_MUNGED, 404,
 				"Object html cannot be accessed: No workspace with id " +
 				"100000000 exists", false);
 	}
@@ -622,7 +669,7 @@ public class HTMLFileSetServServerTest {
 	@Test
 	public void testFailNoSuchWorkspaceName() throws Exception {
 		final String path = "/ireallyhopethiswsdoesntexist/html/-/$/file.txt";
-		testFail(path, TOKEN1.getToken(), 404,
+		testFail(path, TOKEN1_MUNGED, 404,
 				"Object html cannot be accessed: No workspace with name " +
 				"ireallyhopethiswsdoesntexist exists", false);
 	}
@@ -634,7 +681,7 @@ public class HTMLFileSetServServerTest {
 				.withWsid(WS_READ.getE1()).withName("html");
 		WS1.deleteObjects(Arrays.asList(oi));
 		try {
-			testFail(path, TOKEN1.getToken(), 404, String.format(
+			testFail(path, TOKEN1_MUNGED, 404, String.format(
 					"Object 1 (name html) in workspace %s has been deleted",
 					WS_READ.getE1()), false);
 		} finally {
@@ -649,7 +696,7 @@ public class HTMLFileSetServServerTest {
 				.withId(WS_READ.getE1());
 		WS1.deleteWorkspace(wsi);
 		try {
-			testFail(path, TOKEN1.getToken(), 404, String.format(
+			testFail(path, TOKEN1_MUNGED, 404, String.format(
 					 "Object html cannot be accessed: Workspace %s is deleted",
 					WS_READ.getE2()), false);
 		} finally {
@@ -659,65 +706,65 @@ public class HTMLFileSetServServerTest {
 	
 	@Test
 	public void testFailNoPath() throws Exception {
-		testFail("", TOKEN1.getToken(), 404, "Empty path", false);
+		testFail("", TOKEN1_MUNGED, 404, "Empty path", false);
 	}
 	
 	@Test
 	public void testFailNoVersion() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/html/$/file.txt";
-		testFail(path, TOKEN1.getToken(), 404, "Not Found", false);
+		testFail(path, TOKEN1_MUNGED, 404, "Not Found", false);
 	}
 	
 	@Test
 	public void testFailNoSeparator() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/html/-/file.txt";
-		testFail(path, TOKEN1.getToken(), 404, "Not Found", false);
+		testFail(path, TOKEN1_MUNGED, 404, "Not Found", false);
 	}
 	
 	@Test
 	public void testFailNoSlashPostSeparator() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/index/-/$";
-		testFail(path, TOKEN1.getToken(), 404, "Not Found", false);
+		testFail(path, TOKEN1_MUNGED, 404, "Not Found", false);
 	}
 	
 	@Test
 	public void testFailNoFile() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/html/-/$/bar.txt";
-		testFail(path, TOKEN1.getToken(), 404, "Not Found", false);
+		testFail(path, TOKEN1_MUNGED, 404, "Not Found", false);
 	}
 	
 	@Test
 	public void testFailNullEncoding() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/nullenc/-/$/file.txt";
-		testFail(path, TOKEN1.getToken(), 500, "Unable to open the zip file",
+		testFail(path, TOKEN1_MUNGED, 500, "Unable to open the zip file",
 				false);
 	}
 	
 	@Test
 	public void testFailNoEncoding() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/noenc/-/$/file.txt";
-		testFail(path, TOKEN1.getToken(), 500, "Unable to open the zip file",
+		testFail(path, TOKEN1_MUNGED, 500, "Unable to open the zip file",
 				false);
 	}
 	
 	@Test
 	public void testFailBadEncoding() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/badenc/-/$/file.txt";
-		testFail(path, TOKEN1.getToken(), 500, "Failed to decode the zip " +
+		testFail(path, TOKEN1_MUNGED, 500, "Failed to decode the zip " +
 				"file from the workspace object contents", false);
 	}
 	
 	@Test
 	public void testFailBadZip() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/badzip/-/$/file.txt";
-		testFail(path, TOKEN1.getToken(), 500, "Unable to open the zip file",
+		testFail(path, TOKEN1_MUNGED, 500, "Unable to open the zip file",
 				false);
 	}
 	
 	@Test
 	public void testFailBadType() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/badtype/-/$/file.txt";
-		testFail(path, TOKEN1.getToken(), 400,
+		testFail(path, TOKEN1_MUNGED, 400,
 				"The type Empty.AType-1.0 cannot be processed by this service",
 				false);
 	}
@@ -726,7 +773,7 @@ public class HTMLFileSetServServerTest {
 	public void testFailRef() throws Exception {
 		final String path = "/" + WS_READ.getE1() + "/indirectRef/1/" +
 				WS_PRIV.getE1() + "/html/-/$/file.txt";
-		testFail(path, TOKEN1.getToken(), 400, String.format(
+		testFail(path, TOKEN1_MUNGED, 400, String.format(
 				"Reference chain position 1: Object indirectRef with " +
 				"version 1 in workspace %s does not contain a reference to " +
 				"object html in workspace %s",
@@ -737,27 +784,27 @@ public class HTMLFileSetServServerTest {
 	public void testFailRefBadPath() throws Exception {
 		final String path = "/" + WS_READ.getE1() + "/directRef/" +
 				WS_PRIV.getE1() + "/html/-/$/file.txt";
-		testFail(path, TOKEN1.getToken(), 404, "Not Found", false);
+		testFail(path, TOKEN1_MUNGED, 404, "Not Found", false);
 	}
 	
 	@Test
 	public void testFailReportIndexOOB() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/good2/-/$/2/shock2.txt";
-		testFail(path, TOKEN1.getToken(), 404, "Zip identifier 2 exceeds " +
+		testFail(path, TOKEN1_MUNGED, 404, "Zip identifier 2 exceeds " +
 				"number of zip files in KBaseReport list", false);
 	}
 
 	@Test
 	public void testFailReportNoSuchFile() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/good2/-/$/1/shock1.txt";
-		testFail(path, TOKEN1.getToken(), 404, "Not Found", false);
+		testFail(path, TOKEN1_MUNGED, 404, "Not Found", false);
 	}
 	
 	@Test
 	public void testFailReportWsException() throws Exception {
 		// most ws exceptions are tested for htmlfileset
 		final String path = "/" + WS_READ.getE2() + "/good3/-/$/1/shock1.txt";
-		testFail(path, TOKEN1.getToken(), 404,
+		testFail(path, TOKEN1_MUNGED, 404,
 				"No object with name good3 exists in workspace " +
 						WS_READ.getE1(), false);
 	}
@@ -765,21 +812,21 @@ public class HTMLFileSetServServerTest {
 	@Test
 	public void testFailReportIndexString() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/good2/-/$/bl/shock2.txt";
-		testFail(path, TOKEN1.getToken(), 400, "The zip identifier section " +
+		testFail(path, TOKEN1_MUNGED, 400, "The zip identifier section " +
 				"of the path must be a non-negative integer", false);
 	}
 	
 	@Test
 	public void testFailReportIndexNegInt() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/good2/-/$/-1/shock2.txt";
-		testFail(path, TOKEN1.getToken(), 400, "The zip identifier section " +
+		testFail(path, TOKEN1_MUNGED, 400, "The zip identifier section " +
 				"of the path must be a non-negative integer", false);
 	}
 	
 	@Test
 	public void testFailReportIndexNoLinks() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/nolinks/-/$/0/shock1.txt";
-		testFail(path, TOKEN1.getToken(), 404,
+		testFail(path, TOKEN1_MUNGED, 404,
 				"This KBase report does not contain html links", false);
 	}
 	
@@ -787,7 +834,7 @@ public class HTMLFileSetServServerTest {
 	public void testFailReportIndexEmptyLinks() throws Exception {
 		final String path = "/" + WS_READ.getE2() +
 				"/emptylinks/-/$/0/shock1.txt";
-		testFail(path, TOKEN1.getToken(), 404,
+		testFail(path, TOKEN1_MUNGED, 404,
 				"This KBase report does not contain html links", false);
 	}
 	
@@ -797,7 +844,7 @@ public class HTMLFileSetServServerTest {
 				"/shocknofile2/-/$/1/shock2.txt";
 		final String node = OBJ_TO_NODES.get("shocknofile2")
 				.get(1).getId().getId();
-		testFail(path, TOKEN1.getToken(), 500, String.format(
+		testFail(path, TOKEN1_MUNGED, 500, String.format(
 				"The shock node %s has no file", node), false);
 	}
 	
@@ -805,7 +852,7 @@ public class HTMLFileSetServServerTest {
 	public void testFailReportBadZipFile() throws Exception {
 		final String path = "/" + WS_READ.getE2() +
 				"/shockbadzip2/-/$/1/shock2.txt";
-		testFail(path, TOKEN1.getToken(), 500, "Unable to open the zip file",
+		testFail(path, TOKEN1_MUNGED, 500, "Unable to open the zip file",
 				false);
 	}
 	
@@ -813,7 +860,7 @@ public class HTMLFileSetServServerTest {
 	public void testFailReportBadURLSplit() throws Exception {
 		final String path = "/" + WS_READ.getE2() +
 				"/shockbadsplit/-/$/0/shock2.txt";
-		testFail(path, TOKEN1.getToken(), 500, String.format(
+		testFail(path, TOKEN1_MUNGED, 500, String.format(
 				"Invalid shock node url: %s/nde/%s", SHOCK_URL, TEST_UUID),
 				false);
 	}
@@ -822,7 +869,7 @@ public class HTMLFileSetServServerTest {
 	public void testFailReportNoShockNode() throws Exception {
 		final String path = "/" + WS_READ.getE2() +
 				"/shocknonode/-/$/0/shock2.txt";
-		testFail(path, TOKEN1.getToken(), 500, String.format(
+		testFail(path, TOKEN1_MUNGED, 500, String.format(
 				"No such shock node: %s", TEST_UUID), false);
 	}
 	
@@ -830,7 +877,7 @@ public class HTMLFileSetServServerTest {
 	public void testFailReportBadShockNodeID() throws Exception {
 		final String path = "/" + WS_READ.getE2() +
 				"/shockinvalidnode/-/$/0/shock2.txt";
-		testFail(path, TOKEN1.getToken(), 500, String.format(
+		testFail(path, TOKEN1_MUNGED, 500, String.format(
 				"Invalid shock node ID: %s", TEST_BAD_UUID), false);
 	}
 	
@@ -838,7 +885,7 @@ public class HTMLFileSetServServerTest {
 	public void testFailReportBadShockURL() throws Exception {
 		final String path = "/" + WS_READ.getE2() +
 				"/shockinvalidurl/-/$/0/shock2.txt";
-		testFail(path, TOKEN1.getToken(), 500, String.format(
+		testFail(path, TOKEN1_MUNGED, 500, String.format(
 				"Invalid shock URL: %s",
 				SHOCK_URL.toString().replace("https", "htps")) + "/", false);
 	}
@@ -848,7 +895,7 @@ public class HTMLFileSetServServerTest {
 		final String path = "/" + WS_READ.getE2() +
 				"/shockwrongurl/-/$/0/shock2.txt";
 		final String surl = SHOCK_URL.toString();
-		testFail(path, TOKEN1.getToken(), 500, String.format(
+		testFail(path, TOKEN1_MUNGED, 500, String.format(
 				"Invalid shock URL: %s",
 				surl.substring(0, surl.indexOf("/services/shock-api"))) + "/",
 				false);
