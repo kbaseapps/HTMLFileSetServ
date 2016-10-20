@@ -305,7 +305,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		}
 	}
 	
-	public static class ZipIdentifierException extends Exception {
+	private static class ZipIdentifierException extends Exception {
 		
 		public ZipIdentifierException(final String message) {
 			super(message);
@@ -586,7 +586,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		} catch (ServerException e) {
 			handleWSServerError(ri, e, response);
 			return;
-		} catch (ZipIdentifierException e) {
+		} catch (ZipIdentifierException | UnsupportedTypeException e) {
 			handleErr(400, e, ri, response);
 			return;
 		}
@@ -668,6 +668,8 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 				m.contains("is deleted") ||
 				m.contains("No workspace with")) {
 			code = 404;
+		} else if (m.contains("handle error")) {
+			code = 500;
 		}
 		if (m.contains("ObjectSpecification")) {
 			m = m.split(":")[1];
@@ -722,7 +724,13 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		public NotFoundException(final String message) {
 			super(message);
 		}
+	}
+	
+	private static class UnsupportedTypeException extends Exception {
 		
+		public UnsupportedTypeException(final String message) {
+			super(message);
+		}
 	}
 	
 	private Path setUpCache(
@@ -731,7 +739,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			final RequestInfo ri)
 			throws NotFoundException, IOException, ServerException,
 			CorruptDataException, ZipIdentifierException,
-			DataRetrievalException {
+			DataRetrievalException, UnsupportedTypeException {
 		final ResolvedPaths refsAndPath = splitRefsAndPath(path);
 		final List<String> refpath = refsAndPath.refpath;
 
@@ -741,9 +749,9 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		refpath.set(refpath.size() - 1, absref);
 		final TypeHandler handler = handlers.get(absrefAndType.type.getType());
 		if (handler == null) {
-			throw new ServerException(String.format(
+			throw new UnsupportedTypeException(String.format(
 					"The type %s cannot be processed by this service",
-					absrefAndType.type.getTypePrefix()), -1, "TypeError");
+					absrefAndType.type.getTypePrefix()));
 		}
 		final Path zipID = handler.getZipFileIdentifier(refsAndPath.path);
 		
@@ -792,7 +800,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		}
 	}
 	
-	public static class CorruptDataException extends Exception {
+	private static class CorruptDataException extends Exception {
 		
 		public CorruptDataException(final String message) {
 			super(message);
@@ -805,11 +813,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		}
 	}
 	
-	public static class DataRetrievalException extends Exception {
-		
-		public DataRetrievalException(final String message) {
-			super(message);
-		}
+	private static class DataRetrievalException extends Exception {
 		
 		public DataRetrievalException(
 				final String message,
@@ -950,7 +954,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 							buildObjectSpecification(refPath))))
 					.getData().get(0);
 
-			// not really any way to test the next two if statements without
+			// not really any way to test the next if statement without
 			// setting up an insane test rig
 			if (!obj.getInfo().getE3().equals(type.getTypePrefix())) {
 				throw new CorruptDataException("Workspace type changed " +
@@ -958,9 +962,10 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			}
 			if (obj.getHandleError() != null ||
 					obj.getHandleStacktrace() != null) {
-				throw new DataRetrievalException(String.format(
-						"Workspace reported a handle error: %s\n%s",
-						obj.getHandleError(), obj.getHandleStacktrace()));
+				throw new ServerException(
+						"Workspace reported a handle error: " +
+								obj.getHandleError(), -1, "Handle Error",
+								obj.getHandleStacktrace());
 			}
 			@SuppressWarnings("unchecked")
 			final Map<String, Object> o = obj.getData()

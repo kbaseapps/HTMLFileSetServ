@@ -51,6 +51,7 @@ import us.kbase.common.test.TestCommon;
 import us.kbase.common.test.TestException;
 import us.kbase.shock.client.BasicShockClient;
 import us.kbase.shock.client.ShockNode;
+import us.kbase.shock.client.exceptions.ShockNoNodeException;
 import us.kbase.workspace.CreateWorkspaceParams;
 import us.kbase.workspace.ObjectIdentity;
 import us.kbase.workspace.ObjectSaveData;
@@ -228,7 +229,11 @@ public class HTMLFileSetServServerTest {
 	public static void tearDownClass() throws Exception {
 		final List<String> handlesToDelete = new LinkedList<>();
 		for (final Entry<String, NodeAndHandle> e: CREATED_NODES.entrySet()) {
-			e.getValue().node.delete();
+			try {
+				e.getValue().node.delete();
+			} catch (ShockNoNodeException nne) {
+				//continue
+			}
 			handlesToDelete.add(e.getValue().handleID);
 		}
 		HANDLE.deleteHandles(HANDLE.hidsToHandles(handlesToDelete));
@@ -282,6 +287,11 @@ public class HTMLFileSetServServerTest {
 		CREATED_NODES.put(emptynode.getId().getId(),
 				new NodeAndHandle(emptynode, emptyhandle));
 		
+		final ShockNode delnode = bsc.addNode();
+		final String delhandle = makeHandle(delnode);
+		CREATED_NODES.put(delnode.getId().getId(),
+				new NodeAndHandle(delnode, delhandle));
+		
 		final ShockNode badzipnode = bsc.addNode(new ByteArrayInputStream(
 				"This is not a zip file".getBytes()), "bad.zip", "zip");
 		final String badziphandle = makeHandle(badzipnode);
@@ -313,6 +323,10 @@ public class HTMLFileSetServServerTest {
 		saveKBaseReport(WS1, WS_READ.getE1(), "shockbadzip2",
 				Arrays.asList(node1, badzipnode));
 		OBJ_TO_NODES.put("shockbadzip2", Arrays.asList(node1, badzipnode));
+		saveKBaseReport(WS1, WS_READ.getE1(), "shockdelnode2",
+				Arrays.asList(node1, delnode));
+		OBJ_TO_NODES.put("shockdelnode2", Arrays.asList(node1, delnode));
+		bsc.deleteNode(delnode.getId());
 		
 		saveHTMLLinkListToKBaseReport(WS1, WS_READ.getE1(), "nolinks", null);
 		saveHTMLLinkListToKBaseReport(WS1, WS_READ.getE1(), "emptylinks",
@@ -867,10 +881,27 @@ public class HTMLFileSetServServerTest {
 	
 	@Test
 	public void testFailReportNoShockNode() throws Exception {
+		// node id is valid but does not exist, means the url was set
+		// incorrectly in the report object but handle is valid
 		final String path = "/" + WS_READ.getE2() +
 				"/shocknonode/-/$/0/shock2.txt";
 		testFail(path, TOKEN1_MUNGED, 500, String.format(
 				"No such shock node: %s", TEST_UUID), false);
+	}
+	
+	@Test
+	public void testFailReportDeletedShockNode() throws Exception {
+		// deleted after saving so workspace calling the handle service to
+		// update sharing fails
+		final String path = "/" + WS_READ.getE2() +
+				"/shockdelnode2/-/$/0/shock2.txt";
+		final String shockID = OBJ_TO_NODES.get("shockdelnode2")
+				.get(1).getId().getId();
+		final String handleID = CREATED_NODES.get(shockID).handleID;
+		testFail(path, TOKEN1_MUNGED, 500, String.format(
+				"Workspace reported a handle error: The Handle Manager " +
+				"reported a problem while attempting to set Handle ACLs: " +
+				"Unable to set acl(s) on handles %s", handleID), false);
 	}
 	
 	@Test
