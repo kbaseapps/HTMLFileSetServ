@@ -265,6 +265,13 @@ public class HTMLFileSetServServerTest {
 		CREATED_NODES.put(emptynode.getId().getId(),
 				new NodeAndHandle(emptynode, emptyhandle));
 		
+		final ShockNode badzipnode = bsc.addNode(new ByteArrayInputStream(
+				"This is not a zip file".getBytes()), "bad.zip", "zip");
+		final String badziphandle = makeHandle(badzipnode);
+		CREATED_NODES.put(badzipnode.getId().getId(),
+				new NodeAndHandle(badzipnode, badziphandle));
+		
+		
 		final byte[] zip1 = makeZipFile("shock1", "shock1.txt");
 		final ShockNode node1 = bsc.addNode(new ByteArrayInputStream(zip1),
 				"shock1.zip", "zip");
@@ -285,7 +292,11 @@ public class HTMLFileSetServServerTest {
 				Arrays.asList(node1, node2));
 		saveKBaseReport(WS1, WS_READ.getE1(), "shocknofile2",
 				Arrays.asList(node1, emptynode));
-		OBJ_TO_NODES.put("nofile2", Arrays.asList(node1, emptynode));
+		OBJ_TO_NODES.put("shocknofile2", Arrays.asList(node1, emptynode));
+		saveKBaseReport(WS1, WS_READ.getE1(), "shockbadzip2",
+				Arrays.asList(node1, badzipnode));
+		OBJ_TO_NODES.put("shockbadzip2", Arrays.asList(node1, badzipnode));
+		
 		saveHTMLLinkListToKBaseReport(WS1, WS_READ.getE1(), "nolinks", null);
 		saveHTMLLinkListToKBaseReport(WS1, WS_READ.getE1(), "emptylinks",
 				new LinkedList<>());
@@ -784,9 +795,18 @@ public class HTMLFileSetServServerTest {
 	public void testFailReportNoShockFile() throws Exception {
 		final String path = "/" + WS_READ.getE2() +
 				"/shocknofile2/-/$/1/shock2.txt";
-		final String node = OBJ_TO_NODES.get("nofile2").get(1).getId().getId();
+		final String node = OBJ_TO_NODES.get("shocknofile2")
+				.get(1).getId().getId();
 		testFail(path, TOKEN1.getToken(), 500, String.format(
 				"The shock node %s has no file", node), false);
+	}
+	
+	@Test
+	public void testFailReportBadZipFile() throws Exception {
+		final String path = "/" + WS_READ.getE2() +
+				"/shockbadzip2/-/$/1/shock2.txt";
+		testFail(path, TOKEN1.getToken(), 500, "Unable to open the zip file",
+				false);
 	}
 	
 	@Test
