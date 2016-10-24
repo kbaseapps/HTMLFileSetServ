@@ -98,8 +98,6 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	
 	//TODO ZZLATER cache reaper - need to keep date of last access & directory size (calculate during creation) in mem
 	//TODO ZZLATER UI guys / thomason help with error page - defer indefinitely per Bill
-	//TODO ZZEXTERNAL dynamic services should have data mounts
-	//TODO ZZEXTERNAL BLOCKER kbase tokens are a garbled mess
 	
 	private final static String SERVICE_NAME = "HTMLFileSetServ";
 	private static final String X_FORWARDED_FOR = "X-Forwarded-For";
@@ -190,17 +188,17 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			Path tf = null;
 			Path enc = null;
 			try {
-			tf = Files.createTempFile(
-					temp, "wsobj." + absrefSafe + ".", ".json.tmp");
-			final UObject uo = saveObjectToFile(
-					wsURL, workspaceRefPath, token, tf);
-			enc = Files.createTempFile(
-					temp, "encoded." + absrefSafe + ".", ".zip.b64.tmp");
-			try (final JsonTokenStream jts = uo.getPlacedStream();) {
-				jts.close();
-				jts.setRoot(Arrays.asList(
-						"result", "0", "data", "0", "data", "file"));
-				jts.writeJson(enc.toFile());
+				tf = Files.createTempFile(
+						temp, "wsobj." + absrefSafe + ".", ".json.tmp");
+				final UObject uo = saveObjectToFile(
+						wsURL, workspaceRefPath, token, tf);
+				enc = Files.createTempFile(
+						temp, "encoded." + absrefSafe + ".", ".zip.b64.tmp");
+				try (final JsonTokenStream jts = uo.getPlacedStream();) {
+					jts.close();
+					jts.setRoot(Arrays.asList(
+							"result", "0", "data", "0", "data", "file"));
+					jts.writeJson(enc.toFile());
 			}
 			base64DecodeJsonString(enc, zipfile);
 			} finally {
@@ -698,7 +696,8 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		}
 		return null;
 	}
-
+	
+	//TODO LATER Remove when the cookie is no longer munged
 	private String unmungeCookiePerShane(final String cookie)
 			throws AuthException {
 		final String unenc;
