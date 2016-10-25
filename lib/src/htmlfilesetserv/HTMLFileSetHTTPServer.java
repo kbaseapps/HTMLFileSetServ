@@ -934,7 +934,14 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			for (Enumeration<? extends ZipEntry> e = zf.entries();
 					e.hasMoreElements();) {
 				final ZipEntry ze = e.nextElement();
-				final Path file = targetDir.resolve(ze.getName());
+				final Path zippath = Paths.get(ze.getName()).normalize();
+				if (zippath.isAbsolute() || zippath.startsWith("..")) {
+					throw new CorruptDataException(
+							"Zip file contains files outside the zip " +
+							"directory - this is a sign of a malicious zip " +
+							"file.");
+				}
+				final Path file = targetDir.resolve(zippath).toAbsolutePath();
 				Files.createDirectories(file.getParent());
 				Files.createFile(file);
 				try (final OutputStream os = Files.newOutputStream(file);
