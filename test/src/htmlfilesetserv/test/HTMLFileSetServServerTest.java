@@ -356,6 +356,11 @@ public class HTMLFileSetServServerTest {
 				surl.substring(0, surl.indexOf("/services/shock-api")) +
 				"/node/" + TEST_UUID, handle1);
 		
+		
+		//test bad zip files
+		saveHTMLFileSet(WS1, WS_READ.getE1(), "absolutezip", "foo", "/foo");
+		saveHTMLFileSet(WS1, WS_READ.getE1(), "escapezip", "foo",
+				"bar/../../foo");
 	}
 	
 	private static void saveShockURLToKBaseReport(
@@ -977,7 +982,25 @@ public class HTMLFileSetServServerTest {
 				surl.substring(0, surl.indexOf("/services/shock-api"))) + "/",
 				false);
 	}
+	
+	@Test
+	public void testFailAbsoluteZipFile() throws Exception {
+		final String path = "/" + WS_READ.getE1() +
+				"/absolutezip/-/$/file.txt";
+		testFail(path, TOKEN1_MUNGED, 500, "Zip file contains files outside " +
+				"the zip directory - this is a sign of a malicious zip file.",
+				false);
+	}
 
+	@Test
+	public void testFailEscapingZipFile() throws Exception {
+		final String path = "/" + WS_READ.getE1() +
+				"/escapezip/-/$/file.txt";
+		testFail(path, TOKEN1_MUNGED, 500, "Zip file contains files outside " +
+				"the zip directory - this is a sign of a malicious zip file.",
+				false);
+	}
+	
 	private void testFail(
 			final String path,
 			final String token,
