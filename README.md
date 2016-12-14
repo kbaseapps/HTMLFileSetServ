@@ -63,5 +63,3 @@ The zipfile identifier is the index into the list of files stored in the value
 of the "html_links" key in the workspace object.
 
 GET [host]/api/v1/X/Y/Z/$/3/&lt;path to file&gt;
-
-
