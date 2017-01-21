@@ -704,23 +704,23 @@ public class HTMLFileSetServServerTest {
 		final String path = "/" + WS_READ.getE2() + "/html/3/$/file.txt";
 		testFail(path, TOKEN1_MUNGED, 404, String.format(
 				"No object with id 1 (name html) and version 3 exists in " +
-				"workspace %s", WS_READ.getE1()), false);
+				"workspace %s (name %s)", WS_READ.getE1(), WS_READ.getE2()), false);
 	}
 	
 	@Test
 	public void testFailNoSuchObjectID() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/1000/-/$/file.txt";
 		testFail(path, TOKEN1_MUNGED, 404, String.format(
-				"No object with id 1000 exists in workspace %s",
-				WS_READ.getE1()), false);
+				"No object with id 1000 exists in workspace %s (name %s)",
+				WS_READ.getE1(), WS_READ.getE2()), false);
 	}
 	
 	@Test
 	public void testFailNoSuchObjectName() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/nope/-/$/file.txt";
 		testFail(path, TOKEN1_MUNGED, 404, String.format(
-				"No object with name nope exists in workspace %s",
-				WS_READ.getE1()), false);
+				"No object with name nope exists in workspace %s (name %s)",
+				WS_READ.getE1(), WS_READ.getE2()), false);
 	}
 	
 	@Test
@@ -747,8 +747,8 @@ public class HTMLFileSetServServerTest {
 		WS1.deleteObjects(Arrays.asList(oi));
 		try {
 			testFail(path, TOKEN1_MUNGED, 404, String.format(
-					"Object 1 (name html) in workspace %s has been deleted",
-					WS_READ.getE1()), false);
+					"Object 1 (name html) in workspace %s (name %s) has been deleted",
+					WS_READ.getE1(), WS_READ.getE2()), false);
 		} finally {
 			WS1.undeleteObjects(Arrays.asList(oi));
 		}
@@ -839,10 +839,10 @@ public class HTMLFileSetServServerTest {
 		final String path = "/" + WS_READ.getE1() + "/indirectRef/1/" +
 				WS_PRIV.getE1() + "/html/-/$/file.txt";
 		testFail(path, TOKEN1_MUNGED, 400, String.format(
-				"Reference chain position 1: Object indirectRef with " +
-				"version 1 in workspace %s does not contain a reference to " +
-				"object html in workspace %s",
-				WS_READ.getE1(), WS_PRIV.getE1()), false);
+				"Reference path #1 starting with object indirectRef version 1 in workspace " +
+				"%s, position 1: Object indirectRef version 1 in workspace %s does not " +
+				"contain a reference to object html in workspace %s",
+				WS_READ.getE1(), WS_READ.getE1(), WS_PRIV.getE1()), false);
 	}
 	
 	@Test
@@ -869,9 +869,9 @@ public class HTMLFileSetServServerTest {
 	public void testFailReportWsException() throws Exception {
 		// most ws exceptions are tested for htmlfileset
 		final String path = "/" + WS_READ.getE2() + "/good3/-/$/1/shock1.txt";
-		testFail(path, TOKEN1_MUNGED, 404,
-				"No object with name good3 exists in workspace " +
-						WS_READ.getE1(), false);
+		testFail(path, TOKEN1_MUNGED, 404, String.format(
+				"No object with name good3 exists in workspace %s (name %s)",
+						WS_READ.getE1(), WS_READ.getE2()), false);
 	}
 	
 	@Test
