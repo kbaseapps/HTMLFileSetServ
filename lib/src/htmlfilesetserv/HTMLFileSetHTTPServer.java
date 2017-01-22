@@ -645,11 +645,11 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 					return auth.validateToken(unmungeCookiePerShane(c.getValue()));
 				}
 			}
-		}
-		// hacky hack hack - remove later when a final solution for cookies is found
-		for (final Cookie c: request.getCookies()) {
-			if (c.getName().equals(TOKEN_COOKIE2_NAME) && !c.getValue().isEmpty()) {
-				return auth.validateToken(unmungeCookiePerShane(c.getValue()));
+			// hacky hack hack - remove later when a final solution for cookies is found
+			for (final Cookie c: request.getCookies()) {
+				if (c.getName().equals(TOKEN_COOKIE2_NAME) && !c.getValue().isEmpty()) {
+					return auth.validateToken(unmungeCookiePerShane(c.getValue()));
+				}
 			}
 		}
 		return null;
