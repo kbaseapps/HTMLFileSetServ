@@ -108,6 +108,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	private static final String TEMP_DIR = "temp";
 	private static final String CACHE_DIR = "cache";
 	private static final String TOKEN_COOKIE_NAME = "kbase_session";
+	private static final String TOKEN_COOKIE2_NAME = "kbase_session_backup";
 	private static final String ERROR_PAGE_PACKAGE = "htmlfilesetserv";
 	private static final String ERROR_PAGE_NAME = "error.mustache";
 	
@@ -138,8 +139,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	
 		TypeDefName getHandledType();
 		
-		Path getZipFileIdentifier(Path zipFilePath)
-				throws ZipIdentifierException;
+		Path getZipFileIdentifier(Path zipFilePath) throws ZipIdentifierException;
 		
 		void getZipFile(
 				AbsoluteTypeDefId type,
@@ -154,8 +154,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	
 	private static class HTMLFileSetHandler implements TypeHandler {
 
-		private final static TypeDefName TYPE = new TypeDefName(
-				"HTMLFileSetUtils", "HTMLFileSet");
+		private final static TypeDefName TYPE = new TypeDefName("HTMLFileSetUtils", "HTMLFileSet");
 		
 		private final URL wsURL;
 		private final Path temp;
@@ -181,23 +180,18 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 				final Path zipFilePath,
 				final List<String> workspaceRefPath,
 				final Path zipfile,
-				final AuthToken token) throws IOException, ServerException,
-					CorruptDataException {
-			final String absrefSafe = workspaceRefPath.get(
-					workspaceRefPath.size() - 1).replace("/", "_");
+				final AuthToken token) throws IOException, ServerException, CorruptDataException {
+			final String absrefSafe = workspaceRefPath.get(workspaceRefPath.size() - 1)
+					.replace("/", "_");
 			Path tf = null;
 			Path enc = null;
 			try {
-				tf = Files.createTempFile(
-						temp, "wsobj." + absrefSafe + ".", ".json.tmp");
-				final UObject uo = saveObjectToFile(
-						wsURL, workspaceRefPath, token, tf);
-				enc = Files.createTempFile(
-						temp, "encoded." + absrefSafe + ".", ".zip.b64.tmp");
+				tf = Files.createTempFile(temp, "wsobj." + absrefSafe + ".", ".json.tmp");
+				final UObject uo = saveObjectToFile(wsURL, workspaceRefPath, token, tf);
+				enc = Files.createTempFile(temp, "encoded." + absrefSafe + ".", ".zip.b64.tmp");
 				try (final JsonTokenStream jts = uo.getPlacedStream();) {
 					jts.close();
-					jts.setRoot(Arrays.asList(
-							"result", "0", "data", "0", "data", "file"));
+					jts.setRoot(Arrays.asList("result", "0", "data", "0", "data", "file"));
 					jts.writeJson(enc.toFile());
 			}
 			base64DecodeJsonString(enc, zipfile);
@@ -216,8 +210,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 
 	private static class KBaseReportHandler implements TypeHandler {
 
-		private final static TypeDefName TYPE = new TypeDefName(
-				"KBaseReport", "Report");
+		private final static TypeDefName TYPE = new TypeDefName("KBaseReport", "Report");
 		
 		private final URL wsURL;
 		
@@ -231,21 +224,18 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		}
 
 		@Override
-		public Path getZipFileIdentifier(final Path zipFilePath)
-				throws ZipIdentifierException {
+		public Path getZipFileIdentifier(final Path zipFilePath) throws ZipIdentifierException {
 			getZipIndex(zipFilePath); //checks validity of zipfile id
 			return zipFilePath.getName(0);
 		}
 
-		private int getZipIndex(final Path zipFilePath)
-				throws ZipIdentifierException {
+		private int getZipIndex(final Path zipFilePath) throws ZipIdentifierException {
 			final int index;
 			try {
 				index = Integer.parseInt(zipFilePath.getName(0).toString());
 			} catch (NumberFormatException e) {
-				throw new ZipIdentifierException("The zip identifier " +
-						"section of the path must be a non-negative integer",
-						e);
+				throw new ZipIdentifierException("The zip identifier section of the path must " +
+						"be a non-negative integer", e);
 			}
 			if (index < 0) {
 				throw new ZipIdentifierException("The zip identifier " +
@@ -267,11 +257,9 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 					type, zipFilePath, workspaceRefPath, token);
 			final String[] shockURLAndNode = shockNodeURL.split("node/");
 			if (shockURLAndNode.length != 2) {
-				throw new CorruptDataException("Invalid shock node url: " +
-						shockNodeURL);
+				throw new CorruptDataException("Invalid shock node url: " + shockNodeURL);
 			}
-			downloadZipFileFromShock(shockURLAndNode[0], shockURLAndNode[1],
-					zipfile, token);
+			downloadZipFileFromShock(shockURLAndNode[0], shockURLAndNode[1], zipfile, token);
 		}
 
 		private String getShockNodeURL(
@@ -283,20 +271,17 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 					CorruptDataException, NotFoundException,
 					DataRetrievalException {
 			final int index = getZipIndex(zipFilePath);
-			final Map<String, Object> rep = getObject(
-					wsURL, workspaceRefPath, type, token);
+			final Map<String, Object> rep = getObject(wsURL, workspaceRefPath, type, token);
 			@SuppressWarnings("unchecked")
 			final List<Map<String, String>> htmlLinks =
-					(List<Map<String, String>>) rep.get("html_links");
+			(List<Map<String, String>>) rep.get("html_links");
 			if (htmlLinks == null || htmlLinks.isEmpty()) {
-				throw new NotFoundException(
-						"This KBase report does not contain html links");
+				throw new NotFoundException("This KBase report does not contain html links");
 				
 			}
 			if (index >= htmlLinks.size()) {
-				throw new NotFoundException(String.format(
-						"Zip identifier %s exceeds number of zip files in " +
-						"KBaseReport list", index));
+				throw new NotFoundException(String.format("Zip identifier %s exceeds number of " +
+						"zip files in KBaseReport list", index));
 			}
 			return htmlLinks.get(index).get("URL");
 		}
@@ -308,9 +293,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			super(message);
 		}
 
-		public ZipIdentifierException(
-				final String message,
-				final Throwable cause) {
+		public ZipIdentifierException(final String message, final Throwable cause) {
 			super(message, cause);
 		}
 	}
@@ -350,14 +333,12 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			try {
 				acf.withKBaseAuthServerURL(new URL(authURL));
 			} catch (MalformedURLException | URISyntaxException e) {
-				throw new ConfigurationException(
-						"Illegal auth url: " + authURL, e);
+				throw new ConfigurationException("Illegal auth url: " + authURL, e);
 			}
 		}
 		auth = new ConfigurableAuthService(acf);
 		
-		final MustacheFactory mf = new DefaultMustacheFactory(
-				ERROR_PAGE_PACKAGE);
+		final MustacheFactory mf = new DefaultMustacheFactory(ERROR_PAGE_PACKAGE);
 		template = mf.compile(ERROR_PAGE_NAME);
 		
 		final HTMLFileSetHandler hfsh = new HTMLFileSetHandler(wsURL, temp);
@@ -367,25 +348,20 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		handlers.put(kbrh.getHandledType(), kbrh);
 	}
 
-	private void deleteDirectoryAndContents(final Path dir)
-			throws IOException {
+	private void deleteDirectoryAndContents(final Path dir) throws IOException {
 		if (!Files.isDirectory(dir)) {
 			return;
 		}
 		Files.walkFileTree(dir, new SimpleFileVisitor<Path>() {
 			@Override
-			public FileVisitResult visitFile(
-					final Path file,
-					final BasicFileAttributes attrs)
-							throws IOException {
+			public FileVisitResult visitFile(final Path file, final BasicFileAttributes attrs)
+						throws IOException {
 				Files.delete(file);
 				return FileVisitResult.CONTINUE;
 			}
 
 			@Override
-			public FileVisitResult postVisitDirectory(
-					final Path dir,
-					final IOException exc)
+			public FileVisitResult postVisitDirectory(final Path dir, final IOException exc)
 					throws IOException {
 				Files.delete(dir);
 				return FileVisitResult.CONTINUE;
@@ -399,19 +375,16 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			JsonClientException {
 		final String wsURL = config.get(CFG_WS_URL);
 		if (wsURL == null || wsURL.trim().isEmpty()) {
-			throw new ConfigurationException(
-					"Illegal workspace url: " + wsURL);
+			throw new ConfigurationException("Illegal workspace url: " + wsURL);
 		}
 		final URL url;
 		try {
 			url = new URL(wsURL);
 		} catch (MalformedURLException e) {
-			throw new ConfigurationException(
-					"Illegal workspace url: " + wsURL, e);
+			throw new ConfigurationException("Illegal workspace url: " + wsURL, e);
 		}
 		final WorkspaceClient ws = new WorkspaceClient(url);
-		logString(String.format("Contacted workspace version %s at %s",
-				ws.ver(), url));
+		logString(String.format("Contacted workspace version %s at %s", ws.ver(), url));
 		return url;
 	}
 	
@@ -423,31 +396,23 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 
 	private Map<String, String> getConfig() throws ConfigurationException {
 		final JsonServerSyslog logger = new JsonServerSyslog(
-				SERVICE_NAME, JsonServerServlet.KB_DEP,
-				JsonServerSyslog.LOG_LEVEL_INFO, false);
+				SERVICE_NAME, JsonServerServlet.KB_DEP, JsonServerSyslog.LOG_LEVEL_INFO, false);
 		final List<String> configErr = new ArrayList<>();
 		logger.changeOutput(new SyslogOutput() {
 			@Override
-			public void logToSystem(
-					final SyslogIF log,
-					final int level,
-					final String message) {
+			public void logToSystem(final SyslogIF log, final int level, final String message) {
 				configErr.add(message);
 			}
 		});
 		// getConfig() gets the service name from the env if it exists
-		final Map<String, String> cfg = JsonServerServlet.getConfig(
-				SERVICE_NAME, logger);
+		final Map<String, String> cfg = JsonServerServlet.getConfig(SERVICE_NAME, logger);
 		if (!configErr.isEmpty()) {
 			throw new ConfigurationException(configErr.get(0));
 		}
 		return cfg;
 	}
 	
-	private void logErr(
-			final int code,
-			final Throwable error,
-			final RequestInfo ri) {
+	private void logErr(final int code, final Throwable error, final RequestInfo ri) {
 		final String se;
 		if (error instanceof ServerException) {
 			final ServerException serv = (ServerException) error;
@@ -461,15 +426,13 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		}
 		final ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		error.printStackTrace(new PrintStream(baos));
-		logMessage(String.format("%s %s %s %s %s %s%s%s", ri.path, code,
-				ri.userName, ri.ipAddress, ri.requestID, ri.userAgent, se,
-				"\n" + new String(baos.toByteArray(),
+		logMessage(String.format("%s %s %s %s %s %s%s%s", ri.path, code, ri.userName, ri.ipAddress,
+				ri.requestID, ri.userAgent, se, "\n" + new String(baos.toByteArray(),
 						StandardCharsets.UTF_8)));
 	}
 	
 	private void logMessage(final String message, final RequestInfo ri) {
-		logMessage(String.format("%s %s %s", message, ri.userName,
-				ri.requestID));
+		logMessage(String.format("%s %s %s", message, ri.userName, ri.requestID));
 	}
 	
 	private void logMessage(final int code, final RequestInfo ri) {
@@ -492,17 +455,13 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			super(message);
 		}
 
-		public ConfigurationException(
-				final String message,
-				final Throwable cause) {
+		public ConfigurationException(final String message, final Throwable cause) {
 			super(message, cause);
 		}
 	}
 	
 	@Override
-	protected void doOptions(
-			final HttpServletRequest request,
-			final HttpServletResponse response)
+	protected void doOptions(final HttpServletRequest request, final HttpServletResponse response)
 			throws ServletException, IOException {
 		JsonServerServlet.setupResponseHeaders(request, response);
 		response.setContentLength(0);
@@ -533,9 +492,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	}
 	
 	@Override
-	protected void doGet(
-			final HttpServletRequest request,
-			final HttpServletResponse response)
+	protected void doGet(final HttpServletRequest request, final HttpServletResponse response)
 			throws ServletException, IOException {
 		
 		final RequestInfo ri;
@@ -576,8 +533,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		} catch (NotFoundException e) {
 			handleErr(404, e, ri, response);
 			return;
-		} catch (IOException | CorruptDataException |
-				DataRetrievalException e) {
+		} catch (IOException | CorruptDataException | DataRetrievalException e) {
 			handleErr(500, e, ri, response);
 			return;
 		} catch (ServerException e) {
@@ -642,9 +598,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		template.execute(response.getWriter(), model);
 	}
 
-	private RequestInfo buildRequestInfo(
-			final HttpServletRequest request,
-			final String userName) {
+	private RequestInfo buildRequestInfo(final HttpServletRequest request, final String userName) {
 		return new RequestInfo(
 				userName,
 				JsonServerServlet.getIpAddress(request, config),
@@ -687,10 +641,14 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		}
 		if (request.getCookies() != null) {
 			for (final Cookie c: request.getCookies()) {
-				if (c.getName().equals(TOKEN_COOKIE_NAME) &&
-						!c.getValue().isEmpty()) {
-					return auth.validateToken(
-							unmungeCookiePerShane(c.getValue()));
+				if (c.getName().equals(TOKEN_COOKIE_NAME) && !c.getValue().isEmpty()) {
+					return auth.validateToken(unmungeCookiePerShane(c.getValue()));
+				}
+			}
+			// hacky hack hack - remove later when a final solution for cookies is found
+			for (final Cookie c: request.getCookies()) {
+				if (c.getName().equals(TOKEN_COOKIE2_NAME) && !c.getValue().isEmpty()) {
+					return auth.validateToken(unmungeCookiePerShane(c.getValue()));
 				}
 			}
 		}
@@ -698,8 +656,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	}
 	
 	//TODO LATER Remove when the cookie is no longer munged
-	private String unmungeCookiePerShane(final String cookie)
-			throws AuthException {
+	private String unmungeCookiePerShane(final String cookie) throws AuthException {
 		final String unenc;
 		try {
 			unenc = URLDecoder.decode(cookie, StandardCharsets.UTF_8.name());
@@ -717,8 +674,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		}
 		final String token = contents.get("token");
 		if (token == null) {
-			throw new AuthException("Cannot parse token from cookie: " +
-					"No token section");
+			throw new AuthException("Cannot parse token from cookie: No token section");
 		}
 		return token.replace("PIPESIGN", "|").replace("EQUALSSIGN", "=");
 	}
@@ -741,18 +697,14 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		}
 	}
 	
-	private Path setUpCache(
-			final String path,
-			final AuthToken token,
-			final RequestInfo ri)
+	private Path setUpCache(final String path, final AuthToken token, final RequestInfo ri)
 			throws NotFoundException, IOException, ServerException,
 			CorruptDataException, ZipIdentifierException,
 			DataRetrievalException, UnsupportedTypeException {
 		final ResolvedPaths refsAndPath = splitRefsAndPath(path);
 		final List<String> refpath = refsAndPath.refpath;
 
-		final AbsRefAndType absrefAndType =
-				getAbsoluteRef(refpath, token);
+		final AbsRefAndType absrefAndType = getAbsoluteRef(refpath, token);
 		final String absref = absrefAndType.absref;
 		refpath.set(refpath.size() - 1, absref);
 		final TypeHandler handler = handlers.get(absrefAndType.type.getType());
@@ -764,8 +716,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		final Path zipID = handler.getZipFileIdentifier(refsAndPath.path);
 		
 		final Path cacheLoc = cachePath.resolve(absref).resolve(zipID);
-		final Path filepath = cachePath.resolve(absref)
-				.resolve(refsAndPath.path);
+		final Path filepath = cachePath.resolve(absref).resolve(refsAndPath.path);
 		synchronized (this) {
 			if (!locks.containsKey(absref)) {
 				locks.put(absref, new Object());
@@ -781,8 +732,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			Path zip = null;
 			try {
 				zip = Files.createTempFile(temp, absrefSafe + ".", ".zip.tmp");
-				handler.getZipFile(absrefAndType.type, refsAndPath.path,
-						refpath, zip, token);
+				handler.getZipFile(absrefAndType.type, refsAndPath.path, refpath, zip, token);
 				unzip(cacheLoc, zip);
 			} finally {
 				if (zip != null) {
@@ -793,11 +743,9 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		return filepath;
 	}
 
-	private static void base64DecodeJsonString(
-			final Path encoded,
-			final Path unencoded) throws CorruptDataException {
-		try (final OutputStream os = new BufferedOutputStream(
-					Files.newOutputStream(unencoded));
+	private static void base64DecodeJsonString(final Path encoded, final Path unencoded)
+			throws CorruptDataException {
+		try (final OutputStream os = new BufferedOutputStream(Files.newOutputStream(unencoded));
 				final InputStream is = Files.newInputStream(encoded)) {
 			final InputStream iswrap = new RemoveFirstAndLast(
 					new BufferedInputStream(is), Files.size(encoded));
@@ -814,25 +762,19 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			super(message);
 		}
 		
-		public CorruptDataException(
-				final String message,
-				final Throwable cause) {
+		public CorruptDataException(final String message, final Throwable cause) {
 			super(message, cause);
 		}
 	}
 	
 	private static class DataRetrievalException extends Exception {
 		
-		public DataRetrievalException(
-				final String message,
-				final Throwable cause) {
+		public DataRetrievalException(final String message, final Throwable cause) {
 			super(message, cause);
 		}
 	}
 	
-	private AbsRefAndType getAbsoluteRef(
-			final List<String> refpath,
-			final AuthToken token)
+	private AbsRefAndType getAbsoluteRef(final List<String> refpath, final AuthToken token)
 			throws IOException, ServerException {
 		
 		final WorkspaceClient ws = getWorkspaceClient(wsURL, token);
@@ -845,10 +787,8 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 							.withIncludeMetadata(0L)
 							.withObjects(Arrays.asList(os)))
 					.get(0);
-			final AbsoluteTypeDefId type = AbsoluteTypeDefId
-					.fromAbsoluteTypeString(info.getE3());
-			final String absref =  info.getE7() + "/" + info.getE1() + "/" +
-					info.getE5();
+			final AbsoluteTypeDefId type = AbsoluteTypeDefId.fromAbsoluteTypeString(info.getE3());
+			final String absref =  info.getE7() + "/" + info.getE1() + "/" + info.getE5();
 			return new AbsRefAndType(absref, type);
 		} catch (JsonClientException e) {
 			if (e instanceof ServerException) {
@@ -860,9 +800,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		}
 	}
 
-	private static WorkspaceClient getWorkspaceClient(
-			final URL wsURL,
-			final AuthToken token)
+	private static WorkspaceClient getWorkspaceClient(final URL wsURL, final AuthToken token)
 			throws IOException {
 		final WorkspaceClient ws;
 		if (token == null) {
@@ -926,20 +864,15 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		
 	}
 
-	private void unzip(
-			final Path targetDir,
-			final Path zipfile)
+	private void unzip(final Path targetDir, final Path zipfile)
 			throws IOException, CorruptDataException {
 		try (final ZipFile zf = new ZipFile(zipfile.toFile())) {
-			for (Enumeration<? extends ZipEntry> e = zf.entries();
-					e.hasMoreElements();) {
+			for (Enumeration<? extends ZipEntry> e = zf.entries(); e.hasMoreElements();) {
 				final ZipEntry ze = e.nextElement();
 				final Path zippath = Paths.get(ze.getName()).normalize();
 				if (zippath.isAbsolute() || zippath.startsWith("..")) {
-					throw new CorruptDataException(
-							"Zip file contains files outside the zip " +
-							"directory - this is a sign of a malicious zip " +
-							"file.");
+					throw new CorruptDataException("Zip file contains files outside the zip " +
+							"directory - this is a sign of a malicious zip file.");
 				}
 				final Path file = targetDir.resolve(zippath).toAbsolutePath();
 				Files.createDirectories(file.getParent());
@@ -975,16 +908,12 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 				throw new CorruptDataException("Workspace type changed " +
 						"between calls, something is very wrong");
 			}
-			if (obj.getHandleError() != null ||
-					obj.getHandleStacktrace() != null) {
-				throw new ServerException(
-						"Workspace reported a handle error: " +
-								obj.getHandleError(), -1, "Handle Error",
-								obj.getHandleStacktrace());
+			if (obj.getHandleError() != null || obj.getHandleStacktrace() != null) {
+				throw new ServerException("Workspace reported a handle error: " +
+						obj.getHandleError(), -1, "Handle Error", obj.getHandleStacktrace());
 			}
 			@SuppressWarnings("unchecked")
-			final Map<String, Object> o = obj.getData()
-					.asClassInstance(Map.class);
+			final Map<String, Object> o = obj.getData().asClassInstance(Map.class);
 			return o;
 		} catch (JsonClientException e) {
 			if (e instanceof ServerException) {
@@ -1052,22 +981,18 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		// adding the token later prevents the client from creating and
 		// deleting a shock node on startup
 		bsc.updateToken(token);
-		try (final OutputStream out = new BufferedOutputStream(
-				Files.newOutputStream(zipfile))) {
+		try (final OutputStream out = new BufferedOutputStream(Files.newOutputStream(zipfile))) {
 			bsc.getFile(new ShockNodeId(shockNode), out);
 		} catch (ShockNoNodeException e) {
-			throw new CorruptDataException("No such shock node: " +
-					shockNode, e);
+			throw new CorruptDataException("No such shock node: " + shockNode, e);
 		} catch (ShockNoFileException e) {
 			throw new CorruptDataException(String.format(
 					"The shock node %s has no file", shockNode, e));
 		} catch (ShockHttpException e) {
 			// no reasonable way to test this, something's seriously screwed up
-			throw new DataRetrievalException(
-					"Unable to download zip file from shock", e);
+			throw new DataRetrievalException("Unable to download zip file from shock", e);
 		} catch (IllegalArgumentException e) {
-			throw new CorruptDataException("Invalid shock node ID: " +
-					shockNode, e);
+			throw new CorruptDataException("Invalid shock node ID: " + shockNode, e);
 		}
 	}
 	
@@ -1088,17 +1013,14 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		public final String absref;
 		public final AbsoluteTypeDefId type;
 		
-		public AbsRefAndType(
-				final String absref,
-				final AbsoluteTypeDefId type) {
+		public AbsRefAndType(final String absref, final AbsoluteTypeDefId type) {
 			super();
 			this.absref = absref;
 			this.type = type;
 		}
 	}
 
-	private ResolvedPaths splitRefsAndPath(String path)
-			throws NotFoundException {
+	private ResolvedPaths splitRefsAndPath(String path) throws NotFoundException {
 		if (path.startsWith("/")) {
 			path = path.substring(1);
 		}
@@ -1116,20 +1038,17 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			throw new NotFoundException();
 		}
 		final List<String> refpath = new LinkedList<>();
-		for (int i = 0; i < s.length; i ++) {
+		for (int i = 0; i < s.length; i += 3) {
 			String ref = s[i] + "/" + s[i + 1];
 			if (!"-".equals(s[i + 2])) {
 				ref += "/" + s[i + 2];
 			}
-			i += 2;
 			refpath.add(ref);
 		}
 		return new ResolvedPaths(refpath, Paths.get(localPath));
 	}
 
-	private void logHeaders(
-			final HttpServletRequest req,
-			final RequestInfo ri) {
+	private void logHeaders(final HttpServletRequest req, final RequestInfo ri) {
 		final String xFF = req.getHeader(X_FORWARDED_FOR);
 		if (xFF != null && !xFF.isEmpty()) {
 			logMessage(X_FORWARDED_FOR + ": " + xFF, ri);
