@@ -869,6 +869,9 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		try (final ZipFile zf = new ZipFile(zipfile.toFile())) {
 			for (Enumeration<? extends ZipEntry> e = zf.entries(); e.hasMoreElements();) {
 				final ZipEntry ze = e.nextElement();
+				if (ze.isDirectory()) {
+					continue;
+				}
 				final Path zippath = Paths.get(ze.getName()).normalize();
 				if (zippath.isAbsolute() || zippath.startsWith("..")) {
 					throw new CorruptDataException("Zip file contains files outside the zip " +

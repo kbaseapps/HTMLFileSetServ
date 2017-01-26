@@ -85,12 +85,15 @@ public class HTMLFileSetServServerTest {
 	
 	private static URL HTTP_ENDPOINT;
 	
-	private static UUID TEST_UUID = UUID.randomUUID();
-	private static String TEST_BAD_UUID = TEST_UUID + "A";
+	private static final UUID TEST_UUID = UUID.randomUUID();
+	private static final String TEST_BAD_UUID = TEST_UUID + "A";
 	
-	private static Map<String, NodeAndHandle> CREATED_NODES = new HashMap<>();
+	private static final Map<String, NodeAndHandle> CREATED_NODES = new HashMap<>();
 	
-	private static Map<String, List<ShockNode>> OBJ_TO_NODES = new HashMap<>();
+	private static final Map<String, List<ShockNode>> OBJ_TO_NODES = new HashMap<>();
+	
+	private static final Path PATH_TO_TEST_ZIP_WITH_DIRS = Paths.get(
+			"./test/src/htmlfilesetserv/test/zipWithDirectories.zip").toAbsolutePath();
 	
 	@BeforeClass
 	public static void init() throws Exception {
@@ -322,12 +325,18 @@ public class HTMLFileSetServServerTest {
 		final ShockNode node2 = bsc.addNode(new ByteArrayInputStream(zip2),
 				"shock2.zip", "zip");
 		final String handle2 = makeHandle(node2);
-		CREATED_NODES.put(node2.getId().getId(),
-				new NodeAndHandle(node2, handle2));
+		CREATED_NODES.put(node2.getId().getId(), new NodeAndHandle(node2, handle2));
+
+		final byte[] zipWithDirs = Files.readAllBytes(PATH_TO_TEST_ZIP_WITH_DIRS);
+		final ShockNode dirnode = bsc.addNode(new ByteArrayInputStream(zipWithDirs),
+				"dirs.zip", "zip");
+		final String dirhandle = makeHandle(dirnode);
+		CREATED_NODES.put(dirnode.getId().getId(), new NodeAndHandle(dirnode, dirhandle));
 
 		
 		saveKBaseReport(WS1, WS_READ.getE1(), "good2",
 				Arrays.asList(node1, node2));
+		saveKBaseReport(WS1, WS_READ.getE1(), "dirs", Arrays.asList(dirnode));
 		saveKBaseReport(WS1, WS_READ.getE1(), "shocknofile2",
 				Arrays.asList(node1, emptynode));
 		OBJ_TO_NODES.put("shocknofile2", Arrays.asList(node1, emptynode));
@@ -611,6 +620,22 @@ public class HTMLFileSetServServerTest {
 		final String path = "/" + WS_READ.getE2() + "/good2/-/$/1/shock2.txt";
 		final String absref = WS_READ.getE1() + "/11/1";
 		testSuccess(path, absref, TOKEN1_MUNGED, "shock2", "1/shock2.txt",
+				"cookie");
+	}
+	
+	@Test
+	public void testSuccessReportZipWithDirs1() throws Exception {
+		final String path = "/" + WS_READ.getE2() + "/dirs/-/$/0/first.txt";
+		final String absref = WS_READ.getE1() + "/12/1";
+		testSuccess(path, absref, TOKEN1_MUNGED, "this file is first.txt", "0/first.txt",
+				"cookie");
+	}
+	
+	@Test
+	public void testSuccessReportZipWithDirs2() throws Exception {
+		final String path = "/" + WS_READ.getE2() + "/dirs/-/$/0/second/third.txt";
+		final String absref = WS_READ.getE1() + "/12/1";
+		testSuccess(path, absref, TOKEN1_MUNGED, "this file is third.txt", "0/second/third.txt",
 				"cookie");
 	}
 	
