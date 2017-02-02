@@ -7,7 +7,7 @@ Warnings:
 ---------
 
 The service caches data to the scratch space defined in the deploy.cfg file,
-including private data. The scrach space used by the service must not be made
+including private data. The scratch space used by the service must not be made
 available to any other processes or users.
 
 The service expects the scratch space defined in the deploy.cfg file to be a
@@ -23,6 +23,9 @@ It may be worthwhile to restrict creation privileges to specified users,
 but based on the understanding of the use case this is not workable.
 Caja (https://developers.google.com/caja/) might be useful for protecting
 any front end widgets.
+
+Currently the scratch space is cleared on service startup but otherwise grows
+indefinitely.
 
 API:
 ----
@@ -47,6 +50,11 @@ object X/Y/Z.
 To specify a workspace reference path, just include the path in the url:
 
 GET [host]/api/v1/X/Y/Z/X/Y/Z/.../X/Y/Z/$/[zipfile identifier]&lt;path to file&gt;
+
+### Mime types
+
+The service uses [Files.probeContentPath()](http://docs.oracle.com/javase/8/docs/api/java/nio/file/Files.html#probeContentType-java.nio.file.Path-)
+to determine the `Content-Type` header.
 
 Supported types:
 ----------------

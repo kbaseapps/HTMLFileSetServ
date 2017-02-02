@@ -314,11 +314,9 @@ public class HTMLFileSetServServerTest {
 		
 		
 		final byte[] zip1 = makeZipFile("shock1", "shock1.txt");
-		final ShockNode node1 = bsc.addNode(new ByteArrayInputStream(zip1),
-				"shock1.zip", "zip");
+		final ShockNode node1 = bsc.addNode(new ByteArrayInputStream(zip1), "shock1.zip", "zip");
 		final String handle1 = makeHandle(node1);
-		CREATED_NODES.put(node1.getId().getId(),
-				new NodeAndHandle(node1, handle1));
+		CREATED_NODES.put(node1.getId().getId(), new NodeAndHandle(node1, handle1));
 
 		
 		final byte[] zip2 = makeZipFile("shock2", "shock2.txt");
@@ -349,8 +347,7 @@ public class HTMLFileSetServServerTest {
 		bsc.deleteNode(delnode.getId());
 		
 		saveHTMLLinkListToKBaseReport(WS1, WS_READ.getE1(), "nolinks", null);
-		saveHTMLLinkListToKBaseReport(WS1, WS_READ.getE1(), "emptylinks",
-				new LinkedList<>());
+		saveHTMLLinkListToKBaseReport(WS1, WS_READ.getE1(), "emptylinks", new LinkedList<>());
 		
 		saveShockURLToKBaseReport(WS1, WS_READ.getE1(), "shockbadsplit",
 				SHOCK_URL + "/nde/" + TEST_UUID, handle1);
@@ -368,8 +365,7 @@ public class HTMLFileSetServServerTest {
 		
 		//test bad zip files
 		saveHTMLFileSet(WS1, WS_READ.getE1(), "absolutezip", "foo", "/foo");
-		saveHTMLFileSet(WS1, WS_READ.getE1(), "escapezip", "foo",
-				"bar/../../foo");
+		saveHTMLFileSet(WS1, WS_READ.getE1(), "escapezip", "foo", "bar/../../foo");
 	}
 	
 	private static void saveShockURLToKBaseReport(
@@ -585,7 +581,7 @@ public class HTMLFileSetServServerTest {
 		final String path = "/" + WS_READ.getE1() + "/index/-/$/";
 		final String absref = WS_READ.getE1() + "/3/1";
 		testSuccess(path, absref, TOKEN1_MUNGED, "indexfile", "index.html",
-				"cookie");
+				"cookie", "text/html");
 	}
 	
 	@Test
@@ -1059,7 +1055,9 @@ public class HTMLFileSetServServerTest {
 		final HttpURLConnection hc = (HttpURLConnection) u.openConnection();
 		setUpAuthHeader(hc, token, authMode);
 		hc.setDoInput(true);
-		int gotcode = hc.getResponseCode();
+		final int gotcode = hc.getResponseCode();
+		final String ct = hc.getHeaderField("Content-Type");
+		assertThat("incorrect Content-Type", ct, is("text/html"));
 		final String contents;
 		try (final InputStream is = hc.getErrorStream()) {
 			contents = IOUtils.toString(is);
@@ -1092,6 +1090,18 @@ public class HTMLFileSetServServerTest {
 			final String filename,
 			final String authMode)
 			throws Exception {
+		testSuccess(path, absref, token, testcontents, filename, authMode, "text/plain");
+	}
+	
+	private void testSuccess(
+			final String path,
+			final String absref,
+			final String token,
+			final String testcontents,
+			final String filename,
+			final String authMode,
+			final String contentType)
+			throws Exception {
 		logStartTest();
 		final URL u = new URL(HTTP_ENDPOINT.toString() + path);
 		final HttpURLConnection hc = (HttpURLConnection) u.openConnection();
@@ -1106,6 +1116,8 @@ public class HTMLFileSetServServerTest {
 			fail("Request failed. Response code " + code +
 					". Page contents:\n" + contents);
 		}
+		final String ct = hc.getHeaderField("Content-Type");
+		assertThat("incorrect Content-Type", ct, is(contentType));
 		final String contents;
 		try (final InputStream is = hc.getInputStream()) {
 			contents = IOUtils.toString(is);
@@ -1145,7 +1157,7 @@ public class HTMLFileSetServServerTest {
 		final Exception e = new Exception();
 		e.fillInStackTrace();
 		String method = null;
-		for (int i = 1; i < 4; i++) {
+		for (int i = 1; i < 5; i++) {
 			final String mn = e.getStackTrace()[i].getMethodName();
 			if (!mn.equals("testFail") && !mn.equals("testSuccess")) {
 				method = mn;

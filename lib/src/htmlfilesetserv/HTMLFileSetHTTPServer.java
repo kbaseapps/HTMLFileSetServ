@@ -102,6 +102,9 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	private final static String SERVICE_NAME = "HTMLFileSetServ";
 	private static final String X_FORWARDED_FOR = "X-Forwarded-For";
 	private static final String USER_AGENT = "User-Agent";
+	private static final String CONTENT_TYPE = "Content-Type";
+	private static final String CONTENT_TYPE_DEFAULT = "application/octet-stream";
+	private static final String CONTENT_TYPE_HTML = "text/html";
 	private static final String CFG_SCRATCH = "scratch";
 	private static final String CFG_WS_URL = "workspace-url";
 	private static final String CFG_AUTH_URL = "auth-service-url";
@@ -548,6 +551,8 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			handleErr(404, "Not Found", ri, response);
 			return;
 		}
+		final String mimeType = Files.probeContentType(local);
+		response.addHeader(CONTENT_TYPE, mimeType == null ? CONTENT_TYPE_DEFAULT : mimeType);
 		try {
 			try (final InputStream is = Files.newInputStream(local)) {
 				IOUtils.copy(is, response.getOutputStream());
@@ -567,8 +572,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			final RequestInfo ri,
 			final HttpServletResponse response) throws IOException {
 		logErr(code, error, ri);
-		response.setStatus(code);
-		writeErrorPage(code, error.getMessage(), ri, response);
+		returnError(code, error.getMessage(), ri, response);
 	}
 	
 	private void handleErr(
@@ -579,16 +583,17 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			final RequestInfo ri,
 			final HttpServletResponse response) throws IOException {
 		logMessage(code, ri);
-		response.setStatus(code);
-		writeErrorPage(code, error, ri, response);
+		returnError(code, error, ri, response);
 	}
 
-	private void writeErrorPage(
+	private void returnError(
 			final int code,
 			final String error,
 			final RequestInfo ri,
 			final HttpServletResponse response)
 			throws IOException {
+		response.setStatus(code);
+		response.addHeader(CONTENT_TYPE, CONTENT_TYPE_HTML);
 		final Map<String, Object> model = new HashMap<>();
 		model.put("callID", ri.requestID);
 		model.put("time", new Date().getTime());
@@ -629,8 +634,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			m = m.replaceFirst(" #1,", "");
 		}
 		logErr(code, e, ri);
-		response.setStatus(code);
-		writeErrorPage(code, m, ri, response);
+		returnError(code, m, ri, response);
 	}
 
 	private AuthToken getToken(final HttpServletRequest request)
