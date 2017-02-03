@@ -13,12 +13,15 @@ import java.io.UnsupportedEncodingException;
 import java.net.CookieHandler;
 import java.net.CookieManager;
 import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.DigestInputStream;
+import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
@@ -32,6 +35,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.io.output.NullOutputStream;
 import org.ini4j.Ini;
 import org.ini4j.Profile.Section;
 import org.junit.AfterClass;
@@ -94,6 +98,9 @@ public class HTMLFileSetServServerTest {
 	
 	private static final Path PATH_TO_TEST_ZIP_WITH_DIRS = Paths.get(
 			"./test/src/htmlfilesetserv/test/zipWithDirectories.zip").toAbsolutePath();
+	
+	private static final Path PATH_TO_TEST_ZIP_CONTENT_TYPE = Paths.get(
+			"./test/src/htmlfilesetserv/test/contenttype.zip").toAbsolutePath();
 	
 	@BeforeClass
 	public static void init() throws Exception {
@@ -314,11 +321,9 @@ public class HTMLFileSetServServerTest {
 		
 		
 		final byte[] zip1 = makeZipFile("shock1", "shock1.txt");
-		final ShockNode node1 = bsc.addNode(new ByteArrayInputStream(zip1),
-				"shock1.zip", "zip");
+		final ShockNode node1 = bsc.addNode(new ByteArrayInputStream(zip1), "shock1.zip", "zip");
 		final String handle1 = makeHandle(node1);
-		CREATED_NODES.put(node1.getId().getId(),
-				new NodeAndHandle(node1, handle1));
+		CREATED_NODES.put(node1.getId().getId(), new NodeAndHandle(node1, handle1));
 
 		
 		final byte[] zip2 = makeZipFile("shock2", "shock2.txt");
@@ -332,11 +337,19 @@ public class HTMLFileSetServServerTest {
 				"dirs.zip", "zip");
 		final String dirhandle = makeHandle(dirnode);
 		CREATED_NODES.put(dirnode.getId().getId(), new NodeAndHandle(dirnode, dirhandle));
+		
+		final byte[] zipContentType = Files.readAllBytes(PATH_TO_TEST_ZIP_CONTENT_TYPE);
+		final ShockNode contentTypeNode = bsc.addNode(new ByteArrayInputStream(zipContentType),
+				"contenttype.zip", "zip");
+		final String contentTypeHandle = makeHandle(contentTypeNode);
+		CREATED_NODES.put(contentTypeNode.getId().getId(),
+				new NodeAndHandle(contentTypeNode, contentTypeHandle));
 
 		
 		saveKBaseReport(WS1, WS_READ.getE1(), "good2",
 				Arrays.asList(node1, node2));
 		saveKBaseReport(WS1, WS_READ.getE1(), "dirs", Arrays.asList(dirnode));
+		saveKBaseReport(WS1, WS_READ.getE1(), "contenttype", Arrays.asList(contentTypeNode));
 		saveKBaseReport(WS1, WS_READ.getE1(), "shocknofile2",
 				Arrays.asList(node1, emptynode));
 		OBJ_TO_NODES.put("shocknofile2", Arrays.asList(node1, emptynode));
@@ -349,8 +362,7 @@ public class HTMLFileSetServServerTest {
 		bsc.deleteNode(delnode.getId());
 		
 		saveHTMLLinkListToKBaseReport(WS1, WS_READ.getE1(), "nolinks", null);
-		saveHTMLLinkListToKBaseReport(WS1, WS_READ.getE1(), "emptylinks",
-				new LinkedList<>());
+		saveHTMLLinkListToKBaseReport(WS1, WS_READ.getE1(), "emptylinks", new LinkedList<>());
 		
 		saveShockURLToKBaseReport(WS1, WS_READ.getE1(), "shockbadsplit",
 				SHOCK_URL + "/nde/" + TEST_UUID, handle1);
@@ -368,8 +380,7 @@ public class HTMLFileSetServServerTest {
 		
 		//test bad zip files
 		saveHTMLFileSet(WS1, WS_READ.getE1(), "absolutezip", "foo", "/foo");
-		saveHTMLFileSet(WS1, WS_READ.getE1(), "escapezip", "foo",
-				"bar/../../foo");
+		saveHTMLFileSet(WS1, WS_READ.getE1(), "escapezip", "foo", "bar/../../foo");
 	}
 	
 	private static void saveShockURLToKBaseReport(
@@ -585,7 +596,7 @@ public class HTMLFileSetServServerTest {
 		final String path = "/" + WS_READ.getE1() + "/index/-/$/";
 		final String absref = WS_READ.getE1() + "/3/1";
 		testSuccess(path, absref, TOKEN1_MUNGED, "indexfile", "index.html",
-				"cookie");
+				"cookie", "text/html");
 	}
 	
 	@Test
@@ -640,11 +651,82 @@ public class HTMLFileSetServServerTest {
 	}
 	
 	@Test
+	public void testSuccessContentTypeOctet() throws Exception {
+		testSuccessContentType("foo", "application/octet-stream",
+				"87a3bc393e60611fee6de78e75f342b6");
+	}
+	
+	@Test
+	public void testSuccessContentTypeCSS() throws Exception {
+		testSuccessContentType("foo.css", "text/css", "0a57464fefc7bc57696691a4cd00df35");
+	}
+	
+	@Test
+	public void testSuccessContentTypeCSV() throws Exception {
+		testSuccessContentType("foo.csv", "text/csv", "951f25bcb4fb519b8b5eeb00285c2ea0");
+	}
+	
+	@Test
+	public void testSuccessContentTypeGIF() throws Exception {
+		testSuccessContentType("foo.gif", "image/gif", "e7a4855c5961cb9f92132baeff5ff977");
+	}
+	
+	@Test
+	public void testSuccessContentTypeHTM() throws Exception {
+		testSuccessContentType("foo.htm", "text/html", "0dd5f218f1ad596a65aeb09c15f27263");
+	}
+	
+	@Test
+	public void testSuccessContentTypeHTML() throws Exception {
+		testSuccessContentType("foo.html", "text/html", "04a320f8c4a2c856b3170a9917801432");
+	}
+	
+	@Test
+	public void testSuccessContentTypeJPEG() throws Exception {
+		testSuccessContentType("foo.jpeg", "image/jpeg", "fe36477803f3478a80faf01677c09b74");
+	}
+	
+	@Test
+	public void testSuccessContentTypeJPG() throws Exception {
+		testSuccessContentType("foo.jpg", "image/jpeg", "7026a15b02e381ac238822126fcd653b");
+	}
+	
+	@Test
+	public void testSuccessContentTypeJS() throws Exception {
+		testSuccessContentType("foo.js", "application/javascript",
+				"4b1baf1b90889a73aa2ccd6d22d7666e");
+	}
+	
+	@Test
+	public void testSuccessContentTypeJSON() throws Exception {
+		testSuccessContentType("foo.json", "application/json", "8a80554c91d9fca8acb82f023de02f11");
+	}
+	
+	@Test
+	public void testSuccessContentTypePDF() throws Exception {
+		testSuccessContentType("foo.pdf", "application/pdf", "fa7d7e650b2cec68f302b31ba28235d8");
+	}
+	
+	@Test
+	public void testSuccessContentTypePNG() throws Exception {
+		testSuccessContentType("foo.png", "image/png", "38c547f775ad07ba632edd738d8a693f");
+	}
+	
+	@Test
+	public void testSuccessContentTypeSVG() throws Exception {
+		testSuccessContentType("foo.svg", "image/svg+xml", "3d9c4b0137e0113d3c0c6a023d9f84dd");
+	}
+	
+	@Test
+	public void testSuccessContentTypeText() throws Exception {
+		testSuccessContentType("foo.txt", "text/plain", "d3b07384d113edec49eaa6238ad5ff00");
+	}
+
+	@Test
 	public void testFailNoRead() throws Exception {
 		final String path = "/" + WS_PRIV.getE1() + "/html/-/$/file.txt";
 		testFail(path, TOKEN1_MUNGED, 403, String.format(
-				"Object html cannot be accessed: User %s may not " +
-				"read workspace %s",
+				"Object html cannot be accessed: User %s may not read workspace %s",
 				TOKEN1.getUserName(), WS_PRIV.getE1()), "cookie");
 	}
 	
@@ -652,8 +734,7 @@ public class HTMLFileSetServServerTest {
 	public void testFailNoReadCookieBackup() throws Exception {
 		final String path = "/" + WS_PRIV.getE1() + "/html/-/$/file.txt";
 		testFail(path, TOKEN1_MUNGED, 403, String.format(
-				"Object html cannot be accessed: User %s may not " +
-				"read workspace %s",
+				"Object html cannot be accessed: User %s may not read workspace %s",
 				TOKEN1.getUserName(), WS_PRIV.getE1()), "cookiebackup");
 	}
 	
@@ -1059,7 +1140,9 @@ public class HTMLFileSetServServerTest {
 		final HttpURLConnection hc = (HttpURLConnection) u.openConnection();
 		setUpAuthHeader(hc, token, authMode);
 		hc.setDoInput(true);
-		int gotcode = hc.getResponseCode();
+		final int gotcode = hc.getResponseCode();
+		final String ct = hc.getHeaderField("Content-Type");
+		assertThat("incorrect Content-Type", ct, is("text/html"));
 		final String contents;
 		try (final InputStream is = hc.getErrorStream()) {
 			contents = IOUtils.toString(is);
@@ -1092,6 +1175,42 @@ public class HTMLFileSetServServerTest {
 			final String filename,
 			final String authMode)
 			throws Exception {
+		testSuccess(path, absref, token, testcontents, filename, authMode, "text/plain");
+	}
+	
+	private void testSuccess(
+			final String path,
+			final String absref,
+			final String token,
+			final String testcontents,
+			final String filename,
+			final String authMode,
+			final String contentType)
+			throws Exception {
+		final HttpURLConnection hc = getConnectionAndCheckHeader(path, token, authMode,
+				contentType);
+		final String contents;
+		try (final InputStream is = hc.getInputStream()) {
+			contents = IOUtils.toString(is);
+		}
+		assertThat("incorrect file contents", contents, is(testcontents));
+
+		final Path filepath = SCRATCH.resolve("cache").resolve(absref).resolve(filename);
+		final String cacheContents;
+		try (final InputStream is = Files.newInputStream(filepath)) {
+			cacheContents = IOUtils.toString(is);
+		}
+		assertThat("incorrect cache file contents", cacheContents, is(testcontents));
+		
+		assertNoTempFilesLeftOnDisk();
+	}
+
+	private HttpURLConnection getConnectionAndCheckHeader(
+			final String path,
+			final String token,
+			final String authMode,
+			final String contentType)
+			throws MalformedURLException, IOException {
 		logStartTest();
 		final URL u = new URL(HTTP_ENDPOINT.toString() + path);
 		final HttpURLConnection hc = (HttpURLConnection) u.openConnection();
@@ -1106,22 +1225,47 @@ public class HTMLFileSetServServerTest {
 			fail("Request failed. Response code " + code +
 					". Page contents:\n" + contents);
 		}
-		final String contents;
-		try (final InputStream is = hc.getInputStream()) {
-			contents = IOUtils.toString(is);
+		final String ct = hc.getHeaderField("Content-Type");
+		assertThat("incorrect Content-Type", ct, is(contentType));
+		return hc;
+	}
+	
+	
+	private void testSuccessContentType(
+			final String targetfile,
+			final String contenttype,
+			final String md5)
+			throws Exception {
+		final String path = "/" + WS_READ.getE2() + "/contenttype/-/$/0/" + targetfile;
+		final String absref = WS_READ.getE1() + "/13/1";
+		final HttpURLConnection hc = getConnectionAndCheckHeader(path, TOKEN1_MUNGED, "cookie",
+				contenttype);
+		
+		MessageDigest md = MessageDigest.getInstance("MD5");
+		DigestInputStream dis = new DigestInputStream(hc.getInputStream(), md);
+		IOUtils.copy(dis, new NullOutputStream()); // exhaust the stream
+		String digest = getMD5fromDigest(md);
+		assertThat("incorrect MD5", digest, is(md5));
+		
+		final Path filepath = SCRATCH.resolve("cache").resolve(absref).resolve("0/" + targetfile);
+		md = MessageDigest.getInstance("MD5");
+		dis = new DigestInputStream(hc.getInputStream(), md);
+		try (final InputStream is = new DigestInputStream(Files.newInputStream(filepath), md)) {
+			IOUtils.copy(is, new NullOutputStream());
 		}
-		assertThat("incorrect file contents", contents, is(testcontents));
-
-		final Path filepath = SCRATCH.resolve("cache").resolve(absref)
-				.resolve(filename);
-		final String cacheContents;
-		try (final InputStream is = Files.newInputStream(filepath)) {
-			cacheContents = IOUtils.toString(is);
-		}
-		assertThat("incorrect cache file contents", cacheContents,
-				is(testcontents));
+		digest = getMD5fromDigest(md);
+		assertThat("incorrect cache file md5", digest, is(md5));
 		
 		assertNoTempFilesLeftOnDisk();
+	}
+	
+	private String getMD5fromDigest(final MessageDigest digest) {
+		final byte[] d = digest.digest();
+		final StringBuilder sb = new StringBuilder();
+		for (final byte b : d) {
+			sb.append(String.format("%02x", b));
+		}
+		return sb.toString();
 	}
 
 	private void setUpAuthHeader(
@@ -1145,7 +1289,7 @@ public class HTMLFileSetServServerTest {
 		final Exception e = new Exception();
 		e.fillInStackTrace();
 		String method = null;
-		for (int i = 1; i < 4; i++) {
+		for (int i = 1; i < 6; i++) {
 			final String mn = e.getStackTrace()[i].getMethodName();
 			if (!mn.equals("testFail") && !mn.equals("testSuccess")) {
 				method = mn;

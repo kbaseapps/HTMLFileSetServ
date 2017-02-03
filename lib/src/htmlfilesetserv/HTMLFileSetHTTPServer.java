@@ -13,9 +13,11 @@ import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystems;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.PathMatcher;
 import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
@@ -102,6 +104,11 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	private final static String SERVICE_NAME = "HTMLFileSetServ";
 	private static final String X_FORWARDED_FOR = "X-Forwarded-For";
 	private static final String USER_AGENT = "User-Agent";
+	private static final String CONTENT_TYPE = "Content-Type";
+	private static final String CONTENT_TYPE_DEFAULT = "application/octet-stream";
+	private static final String CONTENT_TYPE_TEXT_HTML = "text/html";
+	private static final String CONTENT_TYPE_TEXT_PLAIN = "text/plain";
+	private static final String CONTENT_TYPE_JSON = "application/json";
 	private static final String CFG_SCRATCH = "scratch";
 	private static final String CFG_WS_URL = "workspace-url";
 	private static final String CFG_AUTH_URL = "auth-service-url";
@@ -549,6 +556,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			return;
 		}
 		try {
+			response.addHeader(CONTENT_TYPE, getMimeType(local));
 			try (final InputStream is = Files.newInputStream(local)) {
 				IOUtils.copy(is, response.getOutputStream());
 			}
@@ -559,6 +567,21 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		logMessage(200, ri);
 	}
 
+	private String getMimeType(final Path file) throws IOException {
+		String mimeType = Files.probeContentType(file);
+		if (mimeType == null) {
+			mimeType = CONTENT_TYPE_DEFAULT;
+		}
+		// since pCT returns text/plain for json
+		if (mimeType.equals(CONTENT_TYPE_TEXT_PLAIN)) { // hack hack hack hack hack
+			final PathMatcher matcher = FileSystems.getDefault().getPathMatcher("glob:**.json");
+			if (matcher.matches(file)) {
+				mimeType = CONTENT_TYPE_JSON;
+			}
+		}
+		return mimeType;
+	}
+
 	private void handleErr(
 			final int code,
 			// might want to have a string to override the throwable error
@@ -567,8 +590,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			final RequestInfo ri,
 			final HttpServletResponse response) throws IOException {
 		logErr(code, error, ri);
-		response.setStatus(code);
-		writeErrorPage(code, error.getMessage(), ri, response);
+		returnError(code, error.getMessage(), ri, response);
 	}
 	
 	private void handleErr(
@@ -579,16 +601,17 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			final RequestInfo ri,
 			final HttpServletResponse response) throws IOException {
 		logMessage(code, ri);
-		response.setStatus(code);
-		writeErrorPage(code, error, ri, response);
+		returnError(code, error, ri, response);
 	}
 
-	private void writeErrorPage(
+	private void returnError(
 			final int code,
 			final String error,
 			final RequestInfo ri,
 			final HttpServletResponse response)
 			throws IOException {
+		response.setStatus(code);
+		response.addHeader(CONTENT_TYPE, CONTENT_TYPE_TEXT_HTML);
 		final Map<String, Object> model = new HashMap<>();
 		model.put("callID", ri.requestID);
 		model.put("time", new Date().getTime());
@@ -629,8 +652,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			m = m.replaceFirst(" #1,", "");
 		}
 		logErr(code, e, ri);
-		response.setStatus(code);
-		writeErrorPage(code, m, ri, response);
+		returnError(code, m, ri, response);
 	}
 
 	private AuthToken getToken(final HttpServletRequest request)
