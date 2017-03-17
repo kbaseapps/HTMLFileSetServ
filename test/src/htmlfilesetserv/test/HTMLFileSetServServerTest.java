@@ -457,7 +457,7 @@ public class HTMLFileSetServServerTest {
 				.withObjects(Arrays.asList(new ObjectSaveData()
 						.withData(new UObject(o))
 						.withName(objname)
-						.withType("KBaseReport.Report-1.2"))
+						.withType("KBaseReport.Report"))
 						)
 				);
 	}
