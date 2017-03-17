@@ -11,18 +11,18 @@
 	<classpathentry kind="lib" path="/jars/lib/jars/jna/jna-3.4.0.jar"/>
 	<classpathentry kind="lib" path="/jars/lib/jars/joda/joda-time-2.2.jar"/>
 	<classpathentry kind="lib" path="/jars/lib/jars/junit/junit-4.9.jar"/>
-	<classpathentry kind="lib" path="/jars/lib/jars/kbase/common/kbase-common-0.0.20.jar"/>
+	<classpathentry kind="lib" path="/jars/lib/jars/kbase/common/kbase-common-0.0.23.jar"/>
 	<classpathentry kind="lib" path="/jars/lib/jars/logback/logback-classic-1.1.2.jar"/>
 	<classpathentry kind="lib" path="/jars/lib/jars/logback/logback-core-1.1.2.jar"/>
 	<classpathentry kind="lib" path="/jars/lib/jars/servlet/servlet-api-2.5.jar"/>
 	<classpathentry kind="lib" path="/jars/lib/jars/slf4j/slf4j-api-1.7.7.jar"/>
 	<classpathentry kind="lib" path="/jars/lib/jars/syslog4j/syslog4j-0.9.46.jar"/>
 	<classpathentry kind="lib" path="/jars/lib/jars/apache_commons/commons-io-2.4.jar"/>
-	<classpathentry kind="lib" path="/jars/lib/jars/kbase/auth/kbase-auth-0.4.3.jar"/>
+	<classpathentry kind="lib" path="/jars/lib/jars/kbase/auth/kbase-auth-0.4.4.jar"/>
 	<classpathentry kind="lib" path="/jars/lib/jars/kbase/workspace/WorkspaceService-0.5.0.jar"/>
 	<classpathentry kind="lib" path="/jars/lib/jars/mustache/compiler-0.9.3.jar"/>
 	<classpathentry kind="lib" path="/jars/lib/jars/mongo/mongo-java-driver-2.13.3.jar"/>
-	<classpathentry kind="lib" path="/jars/lib/jars/kbase/shock/shock-client-0.0.14.jar" sourcepath="/jars/lib/jars/kbase/shock/shock-client-0.0.14-sources.jar"/>
+	<classpathentry kind="lib" path="/jars/lib/jars/kbase/shock/shock-client-0.0.15.jar" sourcepath="/jars/lib/jars/kbase/shock/shock-client-0.0.14-sources.jar"/>
 	<classpathentry kind="lib" path="/jars/lib/jars/kbase/handle/HandleServiceClient-160803-b9de699.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>
