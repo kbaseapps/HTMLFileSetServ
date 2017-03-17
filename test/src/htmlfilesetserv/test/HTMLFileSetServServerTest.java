@@ -104,6 +104,8 @@ public class HTMLFileSetServServerTest {
 	private static final Path PATH_TO_TEST_ZIP_CONTENT_TYPE = Paths.get(
 			"./test/src/htmlfilesetserv/test/contenttype.zip").toAbsolutePath();
 	
+	private static String expectedAuthLoginFailedError;
+	
 	@BeforeClass
 	public static void init() throws Exception {
 		
@@ -129,7 +131,15 @@ public class HTMLFileSetServServerTest {
 			throw new TestException(
 					"test property test_user2_token not supplied");
 		}
-		TOKEN1_MUNGED = mungeTokenPerShane(TOKEN1);
+		if (TOKEN1.getToken().contains("|")) {
+            TOKEN1_MUNGED = mungeTokenPerShane(TOKEN1);
+            expectedAuthLoginFailedError = "Login failed! Invalid token";  // for old auth
+		} else {
+		    TOKEN1_MUNGED = TOKEN1.getToken();
+		    expectedAuthLoginFailedError = 
+		            "Login failed! Server responded with code 401 Unauthorized";  // for new auth2
+		}
+
 		
 		//TODO TEST AUTH make configurable?
 		TOKEN2 = authService.validateToken(t2);
@@ -181,9 +191,6 @@ public class HTMLFileSetServServerTest {
 	
 	private static String mungeTokenPerShane(final AuthToken token)
 			throws UnsupportedEncodingException {
-	    if (!token.getToken().contains("|")) {
-	        return token.getToken();
-	    }
 		final Map<String, String> contents = new HashMap<>();
 		contents.put("token", token.getToken());
 		contents.put("un", token.getUserName());
@@ -750,21 +757,17 @@ public class HTMLFileSetServServerTest {
 				TOKEN1.getUserName(), WS_PRIV.getE1()), "cookiebackup");
 	}
 	
-	@Ignore
 	@Test
 	public void testFailBadAuthCookie() throws Exception {
+	    String error = "";
 		final String path = "/" + WS_PRIV.getE1() + "/html/-/$/file.txt";
-		testFail(path, "whee", 401, "Cannot parse token from cookie: " +
-				"Subportion of cookie missing value", "cookie");
+		testFail(path, "whee", 401, expectedAuthLoginFailedError, "cookie");
 	}
 	
-	@Ignore
 	@Test
 	public void testFailBadAuthHeader() throws Exception {
 		final String path = "/" + WS_PRIV.getE1() + "/html/-/$/file.txt";
-		testFail(path, "whee", 401, String.format(
-				"Login failed! Invalid token",
-				TOKEN1.getUserName(), WS_READ.getE1()), "auth");
+		testFail(path, "whee", 401, expectedAuthLoginFailedError, "auth");
 	}
 	
 	@Test
@@ -783,13 +786,11 @@ public class HTMLFileSetServServerTest {
 				"read workspace %s", WS_READ.getE2()), "auth");
 	}
 
-    @Ignore
 	@Test
 	public void testFailAuthNullCookie() throws Exception {
 		// just winds up with the string "null" server side
 		final String path = "/" + WS_READ.getE2() + "/html/-/$/file.txt";
-		testFail(path, null, 401, "Cannot parse token from cookie: " +
-				"Subportion of cookie missing value", "cookie");
+		testFail(path, null, 401, expectedAuthLoginFailedError, "cookie");
 	}
 	
 	@Test
@@ -809,15 +810,14 @@ public class HTMLFileSetServServerTest {
 				"read workspace %s", WS_READ.getE2()), "cookie");
 	}
 	
-	@Ignore
 	@Test
-	public void testFailAuthCookieBadToken() throws Exception {
+	public void testFailAuthCookieBadToken() throws Exception {  //
 		final String path = "/" + WS_READ.getE2() + "/html/-/$/file.txt";
 		final Map<String, String> munge = new HashMap<>();
 		munge.put("user_id", TOKEN1.getUserName());
 		munge.put("un", TOKEN1.getUserName());
 		munge.put("token", "whee");
-		testFail(path, buildMungedCookie(munge), 401, "Login failed! Invalid token", "cookie");
+		testFail(path, buildMungedCookie(munge), 401, expectedAuthLoginFailedError, "cookie");
 	}
 	
 	@Test
