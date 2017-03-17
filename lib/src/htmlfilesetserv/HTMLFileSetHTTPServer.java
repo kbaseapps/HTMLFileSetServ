@@ -112,6 +112,7 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 	private static final String CFG_SCRATCH = "scratch";
 	private static final String CFG_WS_URL = "workspace-url";
 	private static final String CFG_AUTH_URL = "auth-service-url";
+    private static final String CFG_AUTH_URL_ALLOW_INSECURE = "auth-service-url-allow-insecure";
 	private static final String TEMP_DIR = "temp";
 	private static final String CACHE_DIR = "cache";
 	private static final String TOKEN_COOKIE_NAME = "kbase_session";
@@ -339,6 +340,8 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 		if (authURL != null && !authURL.trim().isEmpty()) {
 			try {
 				acf.withKBaseAuthServerURL(new URL(authURL));
+				String allowInsecure = config.get(CFG_AUTH_URL_ALLOW_INSECURE);
+				acf.withAllowInsecureURLs("true".equals(allowInsecure));
 			} catch (MalformedURLException | URISyntaxException e) {
 				throw new ConfigurationException("Illegal auth url: " + authURL, e);
 			}
@@ -662,17 +665,19 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			return auth.validateToken(at);
 		}
 		if (request.getCookies() != null) {
-			for (final Cookie c: request.getCookies()) {
-				if (c.getName().equals(TOKEN_COOKIE_NAME) && !c.getValue().isEmpty()) {
-					return auth.validateToken(unmungeCookiePerShane(c.getValue()));
-				}
-			}
-			// hacky hack hack - remove later when a final solution for cookies is found
-			for (final Cookie c: request.getCookies()) {
-				if (c.getName().equals(TOKEN_COOKIE2_NAME) && !c.getValue().isEmpty()) {
-					return auth.validateToken(unmungeCookiePerShane(c.getValue()));
-				}
-			}
+		    for (String cookieKey : new String[] {TOKEN_COOKIE_NAME, TOKEN_COOKIE2_NAME}) {
+		        for (final Cookie c: request.getCookies()) {
+		            if (c.getName().equals(cookieKey) && !c.getValue().isEmpty()) {
+		                String cookieValue = c.getValue();
+		                String decodedValue = URLDecoder.decode(cookieValue, 
+		                        StandardCharsets.UTF_8.name());
+		                if (decodedValue.contains("\\|") || decodedValue.contains("=")) {
+		                    cookieValue = unmungeCookiePerShane(cookieValue);
+		                }
+		                return auth.validateToken(cookieValue);
+		            }
+		        }
+		    }
 		}
 		return null;
 	}

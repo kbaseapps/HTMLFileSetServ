@@ -40,13 +40,15 @@ import org.ini4j.Ini;
 import org.ini4j.Profile.Section;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import htmlfilesetserv.HTMLFileSetHTTPServer;
+import us.kbase.auth.AuthConfig;
 import us.kbase.auth.AuthToken;
+import us.kbase.auth.ConfigurableAuthService;
 import us.kbase.abstracthandle.AbstractHandleClient;
 import us.kbase.abstracthandle.Handle;
-import us.kbase.auth.AuthService;
 import us.kbase.common.service.JsonClientException;
 import us.kbase.common.service.JsonServerSyslog;
 import us.kbase.common.service.Tuple9;
@@ -102,6 +104,8 @@ public class HTMLFileSetServServerTest {
 	private static final Path PATH_TO_TEST_ZIP_CONTENT_TYPE = Paths.get(
 			"./test/src/htmlfilesetserv/test/contenttype.zip").toAbsolutePath();
 	
+	private static String expectedAuthLoginFailedError;
+	
 	@BeforeClass
 	public static void init() throws Exception {
 		
@@ -114,17 +118,31 @@ public class HTMLFileSetServServerTest {
 		Properties p = new Properties();
 		p.load(Files.newInputStream(testCfg));
 
-		//TODO TEST AUTH make configurable?
-		TOKEN1 = AuthService.validateToken(System.getenv("KB_AUTH_TOKEN"));
-		final String t2 = p.getProperty("test_user2_token");
+        // Token validation
+        String authURL = CONFIG.get("auth-service-url");
+        String authInsecure = CONFIG.get("auth-service-url-allow-insecure");
+        ConfigurableAuthService authService = new ConfigurableAuthService(
+                new AuthConfig().withKBaseAuthServerURL(new URL(authURL))
+                .withAllowInsecureURLs("true".equals(authInsecure)));
+        TOKEN1 = authService.validateToken(System.getenv("KB_AUTH_TOKEN"));
+
+        final String t2 = p.getProperty("test_user2_token");
 		if (t2 == null || t2.trim().isEmpty()) {
 			throw new TestException(
 					"test property test_user2_token not supplied");
 		}
-		TOKEN1_MUNGED = mungeTokenPerShane(TOKEN1);
+		if (TOKEN1.getToken().contains("|")) {
+            TOKEN1_MUNGED = mungeTokenPerShane(TOKEN1);
+            expectedAuthLoginFailedError = "Login failed! Invalid token";  // for old auth
+		} else {
+		    TOKEN1_MUNGED = TOKEN1.getToken();
+		    expectedAuthLoginFailedError = 
+		            "Login failed! Server responded with code 401 Unauthorized";  // for new auth2
+		}
+
 		
 		//TODO TEST AUTH make configurable?
-		TOKEN2 = AuthService.validateToken(t2);
+		TOKEN2 = authService.validateToken(t2);
 		if (TOKEN1.getUserName().equals(TOKEN2.getUserName())) {
 			throw new TestException(String.format(
 					"The two users specified in the test config " +
@@ -159,7 +177,7 @@ public class HTMLFileSetServServerTest {
 		WS1.setPermissions(new SetPermissionsParams().withId(WS_READ.getE1())
 				.withNewPermission("w")
 				.withUsers(Arrays.asList(TOKEN2.getUserName())));
-		HTML_SERVER = startupHTMLServer(wsURL);
+		HTML_SERVER = startupHTMLServer(wsURL, authURL, authInsecure);
 		final int htmlport = HTML_SERVER.getServerPort();
 		HTTP_ENDPOINT = new URL("http://localhost:" + htmlport + "/api/v1");
 		System.out.println("Started html server on port " + htmlport);
@@ -195,7 +213,7 @@ public class HTMLFileSetServServerTest {
 	}
 
 	private static HTMLFileSetHTTPServer startupHTMLServer(
-			final String wsURL)
+			final String wsURL, String authURL, String authInsecure)
 			throws Exception {
 		
 		//write the server config file:
@@ -210,9 +228,10 @@ public class HTMLFileSetServServerTest {
 		Section html = ini.add("HTMLFileSetServ");
 		html.add("workspace-url", wsURL);
 		html.add("scratch", SCRATCH);
-		//TODO TEST AUTH make auth url configurable
-		html.add("auth-service-url",
-				"https://ci.kbase.us/services/authorization");
+		html.add("auth-service-url", authURL);
+		if (authInsecure != null) {
+		    html.add("auth-service-url-allow-insecure", authInsecure);
+		}
 		ini.store(iniFile);
 		iniFile.deleteOnExit();
 
@@ -445,7 +464,7 @@ public class HTMLFileSetServServerTest {
 				.withObjects(Arrays.asList(new ObjectSaveData()
 						.withData(new UObject(o))
 						.withName(objname)
-						.withType("KBaseReport.Report-1.2"))
+						.withType("KBaseReport.Report"))
 						)
 				);
 	}
@@ -740,17 +759,15 @@ public class HTMLFileSetServServerTest {
 	
 	@Test
 	public void testFailBadAuthCookie() throws Exception {
+	    String error = "";
 		final String path = "/" + WS_PRIV.getE1() + "/html/-/$/file.txt";
-		testFail(path, "whee", 401, "Cannot parse token from cookie: " +
-				"Subportion of cookie missing value", "cookie");
+		testFail(path, "whee", 401, expectedAuthLoginFailedError, "cookie");
 	}
 	
 	@Test
 	public void testFailBadAuthHeader() throws Exception {
 		final String path = "/" + WS_PRIV.getE1() + "/html/-/$/file.txt";
-		testFail(path, "whee", 401, String.format(
-				"Login failed! Invalid token",
-				TOKEN1.getUserName(), WS_READ.getE1()), "auth");
+		testFail(path, "whee", 401, expectedAuthLoginFailedError, "auth");
 	}
 	
 	@Test
@@ -773,8 +790,7 @@ public class HTMLFileSetServServerTest {
 	public void testFailAuthNullCookie() throws Exception {
 		// just winds up with the string "null" server side
 		final String path = "/" + WS_READ.getE2() + "/html/-/$/file.txt";
-		testFail(path, null, 401, "Cannot parse token from cookie: " +
-				"Subportion of cookie missing value", "cookie");
+		testFail(path, null, 401, expectedAuthLoginFailedError, "cookie");
 	}
 	
 	@Test
@@ -795,13 +811,13 @@ public class HTMLFileSetServServerTest {
 	}
 	
 	@Test
-	public void testFailAuthCookieBadToken() throws Exception {
+	public void testFailAuthCookieBadToken() throws Exception {  //
 		final String path = "/" + WS_READ.getE2() + "/html/-/$/file.txt";
 		final Map<String, String> munge = new HashMap<>();
 		munge.put("user_id", TOKEN1.getUserName());
 		munge.put("un", TOKEN1.getUserName());
 		munge.put("token", "whee");
-		testFail(path, buildMungedCookie(munge), 401, "Login failed! Invalid token", "cookie");
+		testFail(path, buildMungedCookie(munge), 401, expectedAuthLoginFailedError, "cookie");
 	}
 	
 	@Test
