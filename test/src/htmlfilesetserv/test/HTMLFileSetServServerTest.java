@@ -9,13 +9,11 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.UnsupportedEncodingException;
 import java.net.CookieHandler;
 import java.net.CookieManager;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -69,7 +67,6 @@ import us.kbase.workspace.WorkspaceIdentity;
 public class HTMLFileSetServServerTest {
 	
 	private static AuthToken TOKEN1;
-	private static String TOKEN1_MUNGED;
 	private static AuthToken TOKEN2;
 	private static Map<String, String> CONFIG = null;
 	
@@ -103,7 +100,11 @@ public class HTMLFileSetServServerTest {
 	private static final Path PATH_TO_TEST_ZIP_CONTENT_TYPE = Paths.get(
 			"./test/src/htmlfilesetserv/test/contenttype.zip").toAbsolutePath();
 	
-	private static String expectedAuthLoginFailedError;
+	private static final Path PATH_TO_TEST_ZIP_SPACES = Paths.get(
+			"./test/src/htmlfilesetserv/test/qualimap_15003302628387.zip").toAbsolutePath();
+	
+	private static final String EXPECTED_AUTH_LOGIN_FAILED_ERROR =
+			"Login failed! Server responded with code 401 Unauthorized";
 	
 	@BeforeClass
 	public static void init() throws Exception {
@@ -130,17 +131,7 @@ public class HTMLFileSetServServerTest {
 			throw new TestException(
 					"test property test_user2_token not supplied");
 		}
-		if (TOKEN1.getToken().contains("|")) {
-            TOKEN1_MUNGED = mungeTokenPerShane(TOKEN1);
-            expectedAuthLoginFailedError = "Login failed! Invalid token";  // for old auth
-		} else {
-		    TOKEN1_MUNGED = TOKEN1.getToken();
-		    expectedAuthLoginFailedError = 
-		            "Login failed! Server responded with code 401 Unauthorized";  // for new auth2
-		}
-
 		
-		//TODO TEST AUTH make configurable?
 		TOKEN2 = authService.validateToken(t2);
 		if (TOKEN1.getUserName().equals(TOKEN2.getUserName())) {
 			throw new TestException(String.format(
@@ -162,8 +153,7 @@ public class HTMLFileSetServServerTest {
 		SHOCK_URL = new URL(CONFIG.get("shock-url"));
 		HANDLE_URL = new URL(CONFIG.get("handle-service-url"));
 		
-		HANDLE = new AbstractHandleClient(
-				HANDLE_URL, TOKEN1);
+		HANDLE = new AbstractHandleClient(HANDLE_URL, TOKEN1);
 		
 		long suffix = System.currentTimeMillis();
 		final String wsName1 = "test_HTMLFileSetServ_" + suffix;
@@ -188,29 +178,6 @@ public class HTMLFileSetServServerTest {
 		loadTestData();
 	}
 	
-	private static String mungeTokenPerShane(final AuthToken token)
-			throws UnsupportedEncodingException {
-		final Map<String, String> contents = new HashMap<>();
-		contents.put("token", token.getToken());
-		contents.put("un", token.getUserName());
-		contents.put("user_id", token.getToken());
-		// don't really need this, but whatever
-		contents.put("kbase_sessionid", UUID.randomUUID().toString());
-		return buildMungedCookie(contents);
-	}
-	
-	private static String buildMungedCookie(
-			final Map<String, String> contents)
-			throws UnsupportedEncodingException {
-		final List<String> parts = new LinkedList<>();
-		for (final Entry<String, String> e: contents.entrySet()) {
-			parts.add(e.getKey() + "=" + e.getValue().replace("|", "PIPESIGN")
-					.replace("=", "EQUALSSIGN"));
-		}
-		final String unenc = String.join("|", parts);
-		return URLEncoder.encode(unenc, StandardCharsets.UTF_8.name());
-	}
-
 	private static HTMLFileSetHTTPServer startupHTMLServer(
 			final String wsURL, String authURL, String authInsecure)
 			throws Exception {
@@ -362,12 +329,20 @@ public class HTMLFileSetServServerTest {
 		final String contentTypeHandle = makeHandle(contentTypeNode);
 		CREATED_NODES.put(contentTypeNode.getId().getId(),
 				new NodeAndHandle(contentTypeNode, contentTypeHandle));
+		
+		final byte[] zipSpaces = Files.readAllBytes(PATH_TO_TEST_ZIP_SPACES);
+		final ShockNode spacesNode = bsc.addNode(new ByteArrayInputStream(zipSpaces),
+				"spaces.zip", "zip");
+		final String spacesHandle = makeHandle(spacesNode);
+		CREATED_NODES.put(spacesNode.getId().getId(),
+				new NodeAndHandle(spacesNode, spacesHandle));
 
 		
 		saveKBaseReport(WS1, WS_READ.getE1(), "good2",
 				Arrays.asList(node1, node2));
 		saveKBaseReport(WS1, WS_READ.getE1(), "dirs", Arrays.asList(dirnode));
 		saveKBaseReport(WS1, WS_READ.getE1(), "contenttype", Arrays.asList(contentTypeNode));
+		saveKBaseReport(WS1, WS_READ.getE1(), "spaces", Arrays.asList(spacesNode));
 		saveKBaseReport(WS1, WS_READ.getE1(), "shocknofile2",
 				Arrays.asList(node1, emptynode));
 		OBJ_TO_NODES.put("shocknofile2", Arrays.asList(node1, emptynode));
@@ -562,14 +537,14 @@ public class HTMLFileSetServServerTest {
 	public void testSuccessIDsLatestVerCookie() throws Exception {
 		final String path = "/" + WS_READ.getE1() + "/1/-/$/file.txt";
 		final String absref = WS_READ.getE1() + "/1/2";
-		testSuccess(path, absref, TOKEN1_MUNGED, "file2", "cookie");
+		testSuccess(path, absref, TOKEN1, "file2", "cookie");
 	}
 	
 	@Test
 	public void testSuccessIDsLatestVerCookieBackup() throws Exception {
 		final String path = "/" + WS_READ.getE1() + "/1/-/$/file.txt";
 		final String absref = WS_READ.getE1() + "/1/2";
-		testSuccess(path, absref, TOKEN1_MUNGED, "file2", "cookiebackup");
+		testSuccess(path, absref, TOKEN1, "file2", "cookiebackup");
 	}
 	
 	/* could test that when sending both cookies the first one is used, but that seems like a fair
@@ -582,7 +557,7 @@ public class HTMLFileSetServServerTest {
 	public void testSuccessNamesFirstVerHeader() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/html/1/$/file.txt";
 		final String absref = WS_READ.getE1() + "/1/1";
-		testSuccess(path, absref, TOKEN1.getToken(), "file1", "auth");
+		testSuccess(path, absref, TOKEN1, "file1", "auth");
 	}
 	
 	@Test
@@ -603,17 +578,17 @@ public class HTMLFileSetServServerTest {
 	public void testSuccessCache() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/cache/1/$/file.txt";
 		final String absref = WS_READ.getE1() + "/2/1";
-		testSuccess(path, absref, TOKEN1_MUNGED, "cachefile", "cookie");
+		testSuccess(path, absref, TOKEN1, "cachefile", "cookie");
 		//there's not really any way to easily ensure the code is reading
 		//from the cache...
-		testSuccess(path, absref, TOKEN1.getToken(), "cachefile", "auth");
+		testSuccess(path, absref, TOKEN1, "cachefile", "auth");
 	}
 	
 	@Test
 	public void testSuccessIndexDotHtml() throws Exception {
 		final String path = "/" + WS_READ.getE1() + "/index/-/$/";
 		final String absref = WS_READ.getE1() + "/3/1";
-		testSuccess(path, absref, TOKEN1_MUNGED, "indexfile", "index.html",
+		testSuccess(path, absref, TOKEN1, "indexfile", "index.html",
 				"cookie", "text/html");
 	}
 	
@@ -622,7 +597,7 @@ public class HTMLFileSetServServerTest {
 		final String path = "/" + WS_READ.getE1() + "/directRef/-/" +
 				WS_PRIV.getE1() + "/html/1/$/file.txt";
 		final String absref = WS_PRIV.getE1() + "/1/1";
-		testSuccess(path, absref, TOKEN1_MUNGED, "priv1", "file.txt",
+		testSuccess(path, absref, TOKEN1, "priv1", "file.txt",
 				"cookie");
 	}
 	
@@ -632,7 +607,7 @@ public class HTMLFileSetServServerTest {
 				WS_PRIV.getE1() + "/ref/1/" +
 				WS_PRIV.getE1() + "/html/-/$/file.txt";
 		final String absref = WS_PRIV.getE1() + "/1/1";
-		testSuccess(path, absref, TOKEN1_MUNGED, "priv1", "file.txt",
+		testSuccess(path, absref, TOKEN1, "priv1", "file.txt",
 				"cookie");
 	}
 	
@@ -640,7 +615,7 @@ public class HTMLFileSetServServerTest {
 	public void testSuccessReportIndex1() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/good2/-/$/0/shock1.txt";
 		final String absref = WS_READ.getE1() + "/11/1";
-		testSuccess(path, absref, TOKEN1_MUNGED, "shock1", "0/shock1.txt",
+		testSuccess(path, absref, TOKEN1, "shock1", "0/shock1.txt",
 				"cookie");
 	}
 	
@@ -648,7 +623,7 @@ public class HTMLFileSetServServerTest {
 	public void testSuccessReportIndex2() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/good2/-/$/1/shock2.txt";
 		final String absref = WS_READ.getE1() + "/11/1";
-		testSuccess(path, absref, TOKEN1_MUNGED, "shock2", "1/shock2.txt",
+		testSuccess(path, absref, TOKEN1, "shock2", "1/shock2.txt",
 				"cookie");
 	}
 	
@@ -656,7 +631,7 @@ public class HTMLFileSetServServerTest {
 	public void testSuccessReportZipWithDirs1() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/dirs/-/$/0/first.txt";
 		final String absref = WS_READ.getE1() + "/12/1";
-		testSuccess(path, absref, TOKEN1_MUNGED, "this file is first.txt", "0/first.txt",
+		testSuccess(path, absref, TOKEN1, "this file is first.txt", "0/first.txt",
 				"cookie");
 	}
 	
@@ -664,7 +639,7 @@ public class HTMLFileSetServServerTest {
 	public void testSuccessReportZipWithDirs2() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/dirs/-/$/0/second/third.txt";
 		final String absref = WS_READ.getE1() + "/12/1";
-		testSuccess(path, absref, TOKEN1_MUNGED, "this file is third.txt", "0/second/third.txt",
+		testSuccess(path, absref, TOKEN1, "this file is third.txt", "0/second/third.txt",
 				"cookie");
 	}
 	
@@ -743,7 +718,7 @@ public class HTMLFileSetServServerTest {
 	@Test
 	public void testFailNoRead() throws Exception {
 		final String path = "/" + WS_PRIV.getE1() + "/html/-/$/file.txt";
-		testFail(path, TOKEN1_MUNGED, 403, String.format(
+		testFail(path, TOKEN1.getToken(), 403, String.format(
 				"Object html cannot be accessed: User %s may not read workspace %s",
 				TOKEN1.getUserName(), WS_PRIV.getE1()), "cookie");
 	}
@@ -751,7 +726,7 @@ public class HTMLFileSetServServerTest {
 	@Test
 	public void testFailNoReadCookieBackup() throws Exception {
 		final String path = "/" + WS_PRIV.getE1() + "/html/-/$/file.txt";
-		testFail(path, TOKEN1_MUNGED, 403, String.format(
+		testFail(path, TOKEN1.getToken(), 403, String.format(
 				"Object html cannot be accessed: User %s may not read workspace %s",
 				TOKEN1.getUserName(), WS_PRIV.getE1()), "cookiebackup");
 	}
@@ -759,13 +734,13 @@ public class HTMLFileSetServServerTest {
 	@Test
 	public void testFailBadAuthCookie() throws Exception {
 		final String path = "/" + WS_PRIV.getE1() + "/html/-/$/file.txt";
-		testFail(path, "whee", 401, expectedAuthLoginFailedError, "cookie");
+		testFail(path, "whee", 401, EXPECTED_AUTH_LOGIN_FAILED_ERROR, "cookie");
 	}
 	
 	@Test
 	public void testFailBadAuthHeader() throws Exception {
 		final String path = "/" + WS_PRIV.getE1() + "/html/-/$/file.txt";
-		testFail(path, "whee", 401, expectedAuthLoginFailedError, "auth");
+		testFail(path, "whee", 401, EXPECTED_AUTH_LOGIN_FAILED_ERROR, "auth");
 	}
 	
 	@Test
@@ -788,7 +763,7 @@ public class HTMLFileSetServServerTest {
 	public void testFailAuthNullCookie() throws Exception {
 		// just winds up with the string "null" server side
 		final String path = "/" + WS_READ.getE2() + "/html/-/$/file.txt";
-		testFail(path, null, 401, expectedAuthLoginFailedError, "cookie");
+		testFail(path, null, 401, EXPECTED_AUTH_LOGIN_FAILED_ERROR, "cookie");
 	}
 	
 	@Test
@@ -809,41 +784,9 @@ public class HTMLFileSetServServerTest {
 	}
 	
 	@Test
-	public void testFailAuthCookieBadToken() throws Exception {  //
-		final String path = "/" + WS_READ.getE2() + "/html/-/$/file.txt";
-		final Map<String, String> munge = new HashMap<>();
-		munge.put("user_id", TOKEN1.getUserName());
-		munge.put("un", TOKEN1.getUserName());
-		munge.put("token", "whee");
-		testFail(path, buildMungedCookie(munge), 401, expectedAuthLoginFailedError, "cookie");
-	}
-	
-	@Test
-	public void testFailAuthCookieEmptyToken() throws Exception {
-		final String path = "/" + WS_READ.getE2() + "/html/-/$/file.txt";
-		final Map<String, String> munge = new HashMap<>();
-		munge.put("user_id", TOKEN1.getUserName());
-		munge.put("un", TOKEN1.getUserName());
-		munge.put("token", "");
-		testFail(path, buildMungedCookie(munge), 401, "Cannot parse token " +
-				"from cookie: Subportion of cookie missing value", "cookie");
-	}
-	
-	@Test
-	public void testFailAuthCookieNoToken() throws Exception {
-		final String path = "/" + WS_READ.getE2() + "/html/-/$/file.txt";
-		final Map<String, String> munge = new HashMap<>();
-		munge.put("user_id", TOKEN1.getUserName());
-		munge.put("un", TOKEN1.getUserName());
-		munge.put("tokken", TOKEN1.getToken());
-		testFail(path, buildMungedCookie(munge), 401,
-				"Cannot parse token from cookie: No token section", "cookie");
-	}
-	
-	@Test
 	public void testFailNoSuchVersion() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/html/3/$/file.txt";
-		testFail(path, TOKEN1_MUNGED, 404, String.format(
+		testFail(path, TOKEN1.getToken(), 404, String.format(
 				"No object with id 1 (name html) and version 3 exists in " +
 				"workspace %s (name %s)", WS_READ.getE1(), WS_READ.getE2()), "cookie");
 	}
@@ -851,7 +794,7 @@ public class HTMLFileSetServServerTest {
 	@Test
 	public void testFailNoSuchObjectID() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/1000/-/$/file.txt";
-		testFail(path, TOKEN1_MUNGED, 404, String.format(
+		testFail(path, TOKEN1.getToken(), 404, String.format(
 				"No object with id 1000 exists in workspace %s (name %s)",
 				WS_READ.getE1(), WS_READ.getE2()), "cookie");
 	}
@@ -859,7 +802,7 @@ public class HTMLFileSetServServerTest {
 	@Test
 	public void testFailNoSuchObjectName() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/nope/-/$/file.txt";
-		testFail(path, TOKEN1_MUNGED, 404, String.format(
+		testFail(path, TOKEN1.getToken(), 404, String.format(
 				"No object with name nope exists in workspace %s (name %s)",
 				WS_READ.getE1(), WS_READ.getE2()), "cookie");
 	}
@@ -867,7 +810,7 @@ public class HTMLFileSetServServerTest {
 	@Test
 	public void testFailNoSuchWorkspaceID() throws Exception {
 		final String path = "/100000000/html/-/$/file.txt";
-		testFail(path, TOKEN1_MUNGED, 404,
+		testFail(path, TOKEN1.getToken(), 404,
 				"Object html cannot be accessed: No workspace with id " +
 				"100000000 exists", "cookie");
 	}
@@ -875,7 +818,7 @@ public class HTMLFileSetServServerTest {
 	@Test
 	public void testFailNoSuchWorkspaceName() throws Exception {
 		final String path = "/ireallyhopethiswsdoesntexist/html/-/$/file.txt";
-		testFail(path, TOKEN1_MUNGED, 404,
+		testFail(path, TOKEN1.getToken(), 404,
 				"Object html cannot be accessed: No workspace with name " +
 				"ireallyhopethiswsdoesntexist exists", "cookie");
 	}
@@ -887,7 +830,7 @@ public class HTMLFileSetServServerTest {
 				.withWsid(WS_READ.getE1()).withName("html");
 		WS1.deleteObjects(Arrays.asList(oi));
 		try {
-			testFail(path, TOKEN1_MUNGED, 404, String.format(
+			testFail(path, TOKEN1.getToken(), 404, String.format(
 					"Object 1 (name html) in workspace %s (name %s) has been deleted",
 					WS_READ.getE1(), WS_READ.getE2()), "cookie");
 		} finally {
@@ -902,7 +845,7 @@ public class HTMLFileSetServServerTest {
 				.withId(WS_READ.getE1());
 		WS1.deleteWorkspace(wsi);
 		try {
-			testFail(path, TOKEN1_MUNGED, 404, String.format(
+			testFail(path, TOKEN1.getToken(), 404, String.format(
 					 "Object html cannot be accessed: Workspace %s is deleted",
 					WS_READ.getE2()), "cookie");
 		} finally {
@@ -912,65 +855,65 @@ public class HTMLFileSetServServerTest {
 	
 	@Test
 	public void testFailNoPath() throws Exception {
-		testFail("", TOKEN1_MUNGED, 404, "Empty path", "cookie");
+		testFail("", TOKEN1.getToken(), 404, "Empty path", "cookie");
 	}
 	
 	@Test
 	public void testFailNoVersion() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/html/$/file.txt";
-		testFail(path, TOKEN1_MUNGED, 404, "Not Found", "cookie");
+		testFail(path, TOKEN1.getToken(), 404, "Not Found", "cookie");
 	}
 	
 	@Test
 	public void testFailNoSeparator() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/html/-/file.txt";
-		testFail(path, TOKEN1_MUNGED, 404, "Not Found", "cookie");
+		testFail(path, TOKEN1.getToken(), 404, "Not Found", "cookie");
 	}
 	
 	@Test
 	public void testFailNoSlashPostSeparator() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/index/-/$";
-		testFail(path, TOKEN1_MUNGED, 404, "Not Found", "cookie");
+		testFail(path, TOKEN1.getToken(), 404, "Not Found", "cookie");
 	}
 	
 	@Test
 	public void testFailNoFile() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/html/-/$/bar.txt";
-		testFail(path, TOKEN1_MUNGED, 404, "Not Found", "cookie");
+		testFail(path, TOKEN1.getToken(), 404, "Not Found", "cookie");
 	}
 	
 	@Test
 	public void testFailNullEncoding() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/nullenc/-/$/file.txt";
-		testFail(path, TOKEN1_MUNGED, 500, "Unable to open the zip file",
+		testFail(path, TOKEN1.getToken(), 500, "Unable to open the zip file",
 				"cookie");
 	}
 	
 	@Test
 	public void testFailNoEncoding() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/noenc/-/$/file.txt";
-		testFail(path, TOKEN1_MUNGED, 500, "Unable to open the zip file",
+		testFail(path, TOKEN1.getToken(), 500, "Unable to open the zip file",
 				"cookie");
 	}
 	
 	@Test
 	public void testFailBadEncoding() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/badenc/-/$/file.txt";
-		testFail(path, TOKEN1_MUNGED, 500, "Failed to decode the zip " +
+		testFail(path, TOKEN1.getToken(), 500, "Failed to decode the zip " +
 				"file from the workspace object contents", "cookie");
 	}
 	
 	@Test
 	public void testFailBadZip() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/badzip/-/$/file.txt";
-		testFail(path, TOKEN1_MUNGED, 500, "Unable to open the zip file",
+		testFail(path, TOKEN1.getToken(), 500, "Unable to open the zip file",
 				"cookie");
 	}
 	
 	@Test
 	public void testFailBadType() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/badtype/-/$/file.txt";
-		testFail(path, TOKEN1_MUNGED, 400,
+		testFail(path, TOKEN1.getToken(), 400,
 				"The type Empty.AType-1.0 cannot be processed by this service",
 				"cookie");
 	}
@@ -979,7 +922,7 @@ public class HTMLFileSetServServerTest {
 	public void testFailRef() throws Exception {
 		final String path = "/" + WS_READ.getE1() + "/indirectRef/1/" +
 				WS_PRIV.getE1() + "/html/-/$/file.txt";
-		testFail(path, TOKEN1_MUNGED, 400, String.format(
+		testFail(path, TOKEN1.getToken(), 400, String.format(
 				"Reference path #1 starting with object indirectRef version 1 in workspace " +
 				"%s, position 1: Object indirectRef version 1 in workspace %s does not " +
 				"contain a reference to object html in workspace %s",
@@ -990,27 +933,27 @@ public class HTMLFileSetServServerTest {
 	public void testFailRefBadPath() throws Exception {
 		final String path = "/" + WS_READ.getE1() + "/directRef/" +
 				WS_PRIV.getE1() + "/html/-/$/file.txt";
-		testFail(path, TOKEN1_MUNGED, 404, "Not Found", "cookie");
+		testFail(path, TOKEN1.getToken(), 404, "Not Found", "cookie");
 	}
 	
 	@Test
 	public void testFailReportIndexOOB() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/good2/-/$/2/shock2.txt";
-		testFail(path, TOKEN1_MUNGED, 404, "Zip identifier 2 exceeds " +
+		testFail(path, TOKEN1.getToken(), 404, "Zip identifier 2 exceeds " +
 				"number of zip files in KBaseReport list", "cookie");
 	}
 
 	@Test
 	public void testFailReportNoSuchFile() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/good2/-/$/1/shock1.txt";
-		testFail(path, TOKEN1_MUNGED, 404, "Not Found", "cookie");
+		testFail(path, TOKEN1.getToken(), 404, "Not Found", "cookie");
 	}
 	
 	@Test
 	public void testFailReportWsException() throws Exception {
 		// most ws exceptions are tested for htmlfileset
 		final String path = "/" + WS_READ.getE2() + "/good3/-/$/1/shock1.txt";
-		testFail(path, TOKEN1_MUNGED, 404, String.format(
+		testFail(path, TOKEN1.getToken(), 404, String.format(
 				"No object with name good3 exists in workspace %s (name %s)",
 						WS_READ.getE1(), WS_READ.getE2()), "cookie");
 	}
@@ -1018,21 +961,21 @@ public class HTMLFileSetServServerTest {
 	@Test
 	public void testFailReportIndexString() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/good2/-/$/bl/shock2.txt";
-		testFail(path, TOKEN1_MUNGED, 400, "The zip identifier section " +
+		testFail(path, TOKEN1.getToken(), 400, "The zip identifier section " +
 				"of the path must be a non-negative integer", "cookie");
 	}
 	
 	@Test
 	public void testFailReportIndexNegInt() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/good2/-/$/-1/shock2.txt";
-		testFail(path, TOKEN1_MUNGED, 400, "The zip identifier section " +
+		testFail(path, TOKEN1.getToken(), 400, "The zip identifier section " +
 				"of the path must be a non-negative integer", "cookie");
 	}
 	
 	@Test
 	public void testFailReportIndexNoLinks() throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/nolinks/-/$/0/shock1.txt";
-		testFail(path, TOKEN1_MUNGED, 404,
+		testFail(path, TOKEN1.getToken(), 404,
 				"This KBase report does not contain html links", "cookie");
 	}
 	
@@ -1040,7 +983,7 @@ public class HTMLFileSetServServerTest {
 	public void testFailReportIndexEmptyLinks() throws Exception {
 		final String path = "/" + WS_READ.getE2() +
 				"/emptylinks/-/$/0/shock1.txt";
-		testFail(path, TOKEN1_MUNGED, 404,
+		testFail(path, TOKEN1.getToken(), 404,
 				"This KBase report does not contain html links", "cookie");
 	}
 	
@@ -1050,7 +993,7 @@ public class HTMLFileSetServServerTest {
 				"/shocknofile2/-/$/1/shock2.txt";
 		final String node = OBJ_TO_NODES.get("shocknofile2")
 				.get(1).getId().getId();
-		testFail(path, TOKEN1_MUNGED, 500, String.format(
+		testFail(path, TOKEN1.getToken(), 500, String.format(
 				"The shock node %s has no file", node), "cookie");
 	}
 	
@@ -1058,7 +1001,7 @@ public class HTMLFileSetServServerTest {
 	public void testFailReportBadZipFile() throws Exception {
 		final String path = "/" + WS_READ.getE2() +
 				"/shockbadzip2/-/$/1/shock2.txt";
-		testFail(path, TOKEN1_MUNGED, 500, "Unable to open the zip file",
+		testFail(path, TOKEN1.getToken(), 500, "Unable to open the zip file",
 				"cookie");
 	}
 	
@@ -1066,7 +1009,7 @@ public class HTMLFileSetServServerTest {
 	public void testFailReportBadURLSplit() throws Exception {
 		final String path = "/" + WS_READ.getE2() +
 				"/shockbadsplit/-/$/0/shock2.txt";
-		testFail(path, TOKEN1_MUNGED, 500, String.format(
+		testFail(path, TOKEN1.getToken(), 500, String.format(
 				"Invalid shock node url: %s/nde/%s", SHOCK_URL, TEST_UUID),
 				"cookie");
 	}
@@ -1077,7 +1020,7 @@ public class HTMLFileSetServServerTest {
 		// incorrectly in the report object but handle is valid
 		final String path = "/" + WS_READ.getE2() +
 				"/shocknonode/-/$/0/shock2.txt";
-		testFail(path, TOKEN1_MUNGED, 500, String.format(
+		testFail(path, TOKEN1.getToken(), 500, String.format(
 				"No such shock node: %s", TEST_UUID), "cookie");
 	}
 	
@@ -1090,7 +1033,7 @@ public class HTMLFileSetServServerTest {
 		final String shockID = OBJ_TO_NODES.get("shockdelnode2")
 				.get(1).getId().getId();
 		final String handleID = CREATED_NODES.get(shockID).handleID;
-		testFail(path, TOKEN1_MUNGED, 500, String.format(
+		testFail(path, TOKEN1.getToken(), 500, String.format(
 				"Workspace reported a handle error: The Handle Manager " +
 				"reported a problem while attempting to set Handle ACLs: " +
 				"Unable to set acl(s) on handles %s", handleID), "cookie");
@@ -1100,7 +1043,7 @@ public class HTMLFileSetServServerTest {
 	public void testFailReportBadShockNodeID() throws Exception {
 		final String path = "/" + WS_READ.getE2() +
 				"/shockinvalidnode/-/$/0/shock2.txt";
-		testFail(path, TOKEN1_MUNGED, 500, String.format(
+		testFail(path, TOKEN1.getToken(), 500, String.format(
 				"Invalid shock node ID: %s", TEST_BAD_UUID), "cookie");
 	}
 	
@@ -1108,7 +1051,7 @@ public class HTMLFileSetServServerTest {
 	public void testFailReportBadShockURL() throws Exception {
 		final String path = "/" + WS_READ.getE2() +
 				"/shockinvalidurl/-/$/0/shock2.txt";
-		testFail(path, TOKEN1_MUNGED, 500, String.format(
+		testFail(path, TOKEN1.getToken(), 500, String.format(
 				"Invalid shock URL: %s",
 				SHOCK_URL.toString().replace("https", "htps")) + "/", "cookie");
 	}
@@ -1118,7 +1061,7 @@ public class HTMLFileSetServServerTest {
 		final String path = "/" + WS_READ.getE2() +
 				"/shockwrongurl/-/$/0/shock2.txt";
 		final String surl = SHOCK_URL.toString();
-		testFail(path, TOKEN1_MUNGED, 500, String.format(
+		testFail(path, TOKEN1.getToken(), 500, String.format(
 				"Invalid shock URL: %s",
 				surl.substring(0, surl.indexOf("/services/shock-api"))) + "/",
 				"cookie");
@@ -1128,7 +1071,7 @@ public class HTMLFileSetServServerTest {
 	public void testFailAbsoluteZipFile() throws Exception {
 		final String path = "/" + WS_READ.getE1() +
 				"/absolutezip/-/$/file.txt";
-		testFail(path, TOKEN1_MUNGED, 500, "Zip file contains files outside " +
+		testFail(path, TOKEN1.getToken(), 500, "Zip file contains files outside " +
 				"the zip directory - this is a sign of a malicious zip file.",
 				"cookie");
 	}
@@ -1137,7 +1080,7 @@ public class HTMLFileSetServServerTest {
 	public void testFailEscapingZipFile() throws Exception {
 		final String path = "/" + WS_READ.getE1() +
 				"/escapezip/-/$/file.txt";
-		testFail(path, TOKEN1_MUNGED, 500, "Zip file contains files outside " +
+		testFail(path, TOKEN1.getToken(), 500, "Zip file contains files outside " +
 				"the zip directory - this is a sign of a malicious zip file.",
 				"cookie");
 	}
@@ -1174,7 +1117,7 @@ public class HTMLFileSetServServerTest {
 	private void testSuccess(
 			final String path,
 			final String absref,
-			final String token,
+			final AuthToken token,
 			final String testcontents,
 			final String authMode)
 			throws Exception {
@@ -1184,7 +1127,7 @@ public class HTMLFileSetServServerTest {
 	private void testSuccess(
 			final String path,
 			final String absref,
-			final String token,
+			final AuthToken token,
 			final String testcontents,
 			final String filename,
 			final String authMode)
@@ -1195,7 +1138,7 @@ public class HTMLFileSetServServerTest {
 	private void testSuccess(
 			final String path,
 			final String absref,
-			final String token,
+			final AuthToken token,
 			final String testcontents,
 			final String filename,
 			final String authMode,
@@ -1221,14 +1164,14 @@ public class HTMLFileSetServServerTest {
 
 	private HttpURLConnection getConnectionAndCheckHeader(
 			final String path,
-			final String token,
+			final AuthToken token,
 			final String authMode,
 			final String contentType)
 			throws MalformedURLException, IOException {
 		logStartTest();
 		final URL u = new URL(HTTP_ENDPOINT.toString() + path);
 		final HttpURLConnection hc = (HttpURLConnection) u.openConnection();
-		setUpAuthHeader(hc, token, authMode);
+		setUpAuthHeader(hc, token == null ? null : token.getToken(), authMode);
 		hc.setDoInput(true);
 		int code = hc.getResponseCode();
 		if (code != 200) {
@@ -1252,7 +1195,7 @@ public class HTMLFileSetServServerTest {
 			throws Exception {
 		final String path = "/" + WS_READ.getE2() + "/contenttype/-/$/0/" + targetfile;
 		final String absref = WS_READ.getE1() + "/13/1";
-		final HttpURLConnection hc = getConnectionAndCheckHeader(path, TOKEN1_MUNGED, "cookie",
+		final HttpURLConnection hc = getConnectionAndCheckHeader(path, TOKEN1, "cookie",
 				contenttype);
 		
 		MessageDigest md = MessageDigest.getInstance("MD5");

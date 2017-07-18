@@ -7,11 +7,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintStream;
-import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
 import java.net.URISyntaxException;
 import java.net.URL;
-import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.FileVisitResult;
@@ -665,47 +663,17 @@ public class HTMLFileSetHTTPServer extends HttpServlet {
 			return auth.validateToken(at);
 		}
 		if (request.getCookies() != null) {
-		    for (String cookieKey : new String[] {TOKEN_COOKIE_NAME, TOKEN_COOKIE2_NAME}) {
-		        for (final Cookie c: request.getCookies()) {
-		            if (c.getName().equals(cookieKey) && !c.getValue().isEmpty()) {
-		                String cookieValue = c.getValue();
-		                String decodedValue = URLDecoder.decode(cookieValue, 
-		                        StandardCharsets.UTF_8.name());
-		                if (decodedValue.contains("\\|") || decodedValue.contains("=")) {
-		                    cookieValue = unmungeCookiePerShane(cookieValue);
-		                }
-		                return auth.validateToken(cookieValue);
-		            }
-		        }
-		    }
+			for (String cookieKey : new String[] {TOKEN_COOKIE_NAME, TOKEN_COOKIE2_NAME}) {
+				for (final Cookie c: request.getCookies()) {
+					if (c.getName().equals(cookieKey) && !c.getValue().isEmpty()) {
+						return auth.validateToken(c.getValue());
+					}
+				}
+			}
 		}
 		return null;
 	}
 	
-	//TODO LATER Remove when the cookie is no longer munged
-	private String unmungeCookiePerShane(final String cookie) throws AuthException {
-		final String unenc;
-		try {
-			unenc = URLDecoder.decode(cookie, StandardCharsets.UTF_8.name());
-		} catch (UnsupportedEncodingException e) {
-			throw new RuntimeException("This should be impossible", e);
-		}
-		final Map<String, String> contents = new HashMap<>();
-		for (final String part: unenc.split("\\|")) {
-			final String[] partpart = part.split("=");
-			if (partpart.length != 2) {
-				throw new AuthException("Cannot parse token from cookie: " +
-						"Subportion of cookie missing value");
-			}
-			contents.put(partpart[0], partpart[1]);
-		}
-		final String token = contents.get("token");
-		if (token == null) {
-			throw new AuthException("Cannot parse token from cookie: No token section");
-		}
-		return token.replace("PIPESIGN", "|").replace("EQUALSSIGN", "=");
-	}
-
 	private static class NotFoundException extends Exception {
 		
 		public NotFoundException() {
