@@ -40,7 +40,6 @@ import org.ini4j.Ini;
 import org.ini4j.Profile.Section;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import htmlfilesetserv.HTMLFileSetHTTPServer;
@@ -759,7 +758,6 @@ public class HTMLFileSetServServerTest {
 	
 	@Test
 	public void testFailBadAuthCookie() throws Exception {
-	    String error = "";
 		final String path = "/" + WS_PRIV.getE1() + "/html/-/$/file.txt";
 		testFail(path, "whee", 401, expectedAuthLoginFailedError, "cookie");
 	}
