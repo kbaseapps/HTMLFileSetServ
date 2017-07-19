@@ -1,2 +1,4 @@
 /bin
 test_local
+/deploy-test.cfg
+/dist/
