@@ -8,6 +8,7 @@ MAINTAINER KBase Developer
 # RUN apt-get update
 
 RUN sudo apt-get install nano \
+	&& sudo apt-get install tree \
 	&& add-apt-repository ppa:openjdk-r/ppa \
 	&& sudo apt-get update \
 	&& sudo apt-get -y install openjdk-8-jdk \

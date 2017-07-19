@@ -100,9 +100,6 @@ public class HTMLFileSetServServerTest {
 	private static final Path PATH_TO_TEST_ZIP_CONTENT_TYPE = Paths.get(
 			"./test/src/htmlfilesetserv/test/contenttype.zip").toAbsolutePath();
 	
-	private static final Path PATH_TO_TEST_ZIP_SPACES = Paths.get(
-			"./test/src/htmlfilesetserv/test/qualimap_15003302628387.zip").toAbsolutePath();
-	
 	private static final String EXPECTED_AUTH_LOGIN_FAILED_ERROR =
 			"Login failed! Server responded with code 401 Unauthorized";
 	
@@ -330,19 +327,10 @@ public class HTMLFileSetServServerTest {
 		CREATED_NODES.put(contentTypeNode.getId().getId(),
 				new NodeAndHandle(contentTypeNode, contentTypeHandle));
 		
-		final byte[] zipSpaces = Files.readAllBytes(PATH_TO_TEST_ZIP_SPACES);
-		final ShockNode spacesNode = bsc.addNode(new ByteArrayInputStream(zipSpaces),
-				"spaces.zip", "zip");
-		final String spacesHandle = makeHandle(spacesNode);
-		CREATED_NODES.put(spacesNode.getId().getId(),
-				new NodeAndHandle(spacesNode, spacesHandle));
-
-		
 		saveKBaseReport(WS1, WS_READ.getE1(), "good2",
 				Arrays.asList(node1, node2));
 		saveKBaseReport(WS1, WS_READ.getE1(), "dirs", Arrays.asList(dirnode));
 		saveKBaseReport(WS1, WS_READ.getE1(), "contenttype", Arrays.asList(contentTypeNode));
-		saveKBaseReport(WS1, WS_READ.getE1(), "spaces", Arrays.asList(spacesNode));
 		saveKBaseReport(WS1, WS_READ.getE1(), "shocknofile2",
 				Arrays.asList(node1, emptynode));
 		OBJ_TO_NODES.put("shocknofile2", Arrays.asList(node1, emptynode));
@@ -1144,6 +1132,7 @@ public class HTMLFileSetServServerTest {
 			final String authMode,
 			final String contentType)
 			throws Exception {
+		logStartTest();
 		final HttpURLConnection hc = getConnectionAndCheckHeader(path, token, authMode,
 				contentType);
 		final String contents;
@@ -1168,7 +1157,6 @@ public class HTMLFileSetServServerTest {
 			final String authMode,
 			final String contentType)
 			throws MalformedURLException, IOException {
-		logStartTest();
 		final URL u = new URL(HTTP_ENDPOINT.toString() + path);
 		final HttpURLConnection hc = (HttpURLConnection) u.openConnection();
 		setUpAuthHeader(hc, token == null ? null : token.getToken(), authMode);
@@ -1193,6 +1181,7 @@ public class HTMLFileSetServServerTest {
 			final String contenttype,
 			final String md5)
 			throws Exception {
+		logStartTest();
 		final String path = "/" + WS_READ.getE2() + "/contenttype/-/$/0/" + targetfile;
 		final String absref = WS_READ.getE1() + "/13/1";
 		final HttpURLConnection hc = getConnectionAndCheckHeader(path, TOKEN1, "cookie",
@@ -1248,7 +1237,8 @@ public class HTMLFileSetServServerTest {
 		String method = null;
 		for (int i = 1; i < 6; i++) {
 			final String mn = e.getStackTrace()[i].getMethodName();
-			if (!mn.equals("testFail") && !mn.equals("testSuccess")) {
+			if (!mn.equals("testFail") && !mn.equals("testSuccess") &&
+					!mn.equals("testSuccessContentType")) {
 				method = mn;
 				break;
 			}
