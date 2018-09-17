@@ -76,6 +76,8 @@ public class HTMLFileSetServServerTest {
 			String, Map<String, String>> WS_READ;
 	private static Tuple9<Long, String, String, String, Long, String, String,
 			String, Map<String, String>> WS_PRIV;
+	private static Tuple9<Long, String, String, String, Long, String, String,
+			String, Map<String, String>> WS_DEL;
 	
 	private static WorkspaceClient WS1;
 	private static WorkspaceClient WS2;
@@ -115,20 +117,20 @@ public class HTMLFileSetServServerTest {
 		Properties p = new Properties();
 		p.load(Files.newInputStream(testCfg));
 
-        // Token validation
-        String authURL = CONFIG.get("auth-service-url");
-        String authInsecure = CONFIG.get("auth-service-url-allow-insecure");
-        ConfigurableAuthService authService = new ConfigurableAuthService(
-                new AuthConfig().withKBaseAuthServerURL(new URL(authURL))
-                .withAllowInsecureURLs("true".equals(authInsecure)));
-        TOKEN1 = authService.validateToken(System.getenv("KB_AUTH_TOKEN"));
+		// Token validation
+		String authURL = CONFIG.get("auth-service-url");
+		String authInsecure = CONFIG.get("auth-service-url-allow-insecure");
+		ConfigurableAuthService authService = new ConfigurableAuthService(
+				new AuthConfig().withKBaseAuthServerURL(new URL(authURL))
+				.withAllowInsecureURLs("true".equals(authInsecure)));
+		TOKEN1 = authService.validateToken(System.getenv("KB_AUTH_TOKEN"));
 
-        final String t2 = p.getProperty("test_user2_token");
+		final String t2 = p.getProperty("test_user2_token");
 		if (t2 == null || t2.trim().isEmpty()) {
 			throw new TestException(
 					"test property test_user2_token not supplied");
 		}
-		
+
 		TOKEN2 = authService.validateToken(t2);
 		if (TOKEN1.getUserName().equals(TOKEN2.getUserName())) {
 			throw new TestException(String.format(
@@ -159,6 +161,8 @@ public class HTMLFileSetServServerTest {
 		System.out.println("Created test workspace " + WS_READ.getE2());
 		WS_PRIV = WS2.createWorkspace(new CreateWorkspaceParams()
 				.withWorkspace(wsName1 + "private"));
+		WS_DEL = WS1.createWorkspace(new CreateWorkspaceParams()
+				.withWorkspace(wsName1 + "deleted"));
 		System.out.println("Created test workspace " + WS_PRIV.getE2());
 		WS1.setPermissions(new SetPermissionsParams().withId(WS_READ.getE1())
 				.withNewPermission("w")
@@ -173,6 +177,7 @@ public class HTMLFileSetServServerTest {
 		CookieHandler.setDefault(cookieManager);
 		
 		loadTestData();
+		WS1.deleteWorkspace(new WorkspaceIdentity().withId(WS_DEL.getE1()));
 	}
 	
 	private static HTMLFileSetHTTPServer startupHTMLServer(
@@ -281,6 +286,9 @@ public class HTMLFileSetServServerTest {
 		saveRef(WS2, WS_READ.getE1(), "directRef", WS_PRIV.getE1(), "html", 1);
 		saveRef(WS2, WS_READ.getE1(), "indirectRef",
 				WS_PRIV.getE1(), "ref", 1);
+		
+		// deleted workspace for user 1
+		saveHTMLFileSet(WS1, WS_DEL.getE1(), "html", "file1", "file.txt");
 		
 		// KBaseReport.Report testing
 		final BasicShockClient bsc = new BasicShockClient(SHOCK_URL, TOKEN1);
@@ -828,17 +836,10 @@ public class HTMLFileSetServServerTest {
 	
 	@Test
 	public void testFailDeletedWorkspace() throws Exception {
-		final String path = "/" + WS_READ.getE2() + "/html/-/$/file.txt";
-		final WorkspaceIdentity wsi = new WorkspaceIdentity()
-				.withId(WS_READ.getE1());
-		WS1.deleteWorkspace(wsi);
-		try {
-			testFail(path, TOKEN1.getToken(), 404, String.format(
-					 "Object html cannot be accessed: Workspace %s is deleted",
-					WS_READ.getE2()), "cookie");
-		} finally {
-			WS1.undeleteWorkspace(wsi);
-		}
+		final String path = "/" + WS_DEL.getE2() + "/html/-/$/file.txt";
+		testFail(path, TOKEN1.getToken(), 404, String.format(
+				"Object html cannot be accessed: Workspace %s is deleted",
+				WS_DEL.getE2()), "cookie");
 	}
 	
 	@Test
