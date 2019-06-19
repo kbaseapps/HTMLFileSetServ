@@ -27,7 +27,7 @@ RUN cd /kb/dev_container/modules/jars \
     && git pull \
     && . /kb/dev_container/user-env.sh \
     && make deploy \
-    && echo "this is only here to force an update: 1"
+    && echo "this is only here to force an update: 2"
 
 ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64
 

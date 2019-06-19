@@ -39,10 +39,10 @@
     <include name="kbase/workspace/WorkspaceService-0.5.0.jar"/>
     <include name="mustache/compiler-0.9.3.jar"/>
     <!-- shock client requirements -->
-    <include name="kbase/shock/shock-client-0.0.15.jar"/>
-    <include name="apache_commons/http/httpclient-4.3.1.jar"/>
-    <include name="apache_commons/http/httpcore-4.3.jar"/>
-    <include name="apache_commons/http/httpmime-4.3.1.jar"/>
+    <include name="kbase/shock/shock-client-0.1.0.jar"/>
+    <include name="apache_commons/http/httpclient-4.5.2.jar"/>
+    <include name="apache_commons/http/httpcore-4.4.5.jar"/>
+    <include name="apache_commons/http/httpmime-4.5.8.jar"/>
     <include name="apache_commons/commons-lang3-3.1.jar"/>
     <include name="apache_commons/commons-logging-1.1.1.jar"/>
     <!-- these are needed for tests -->

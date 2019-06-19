@@ -293,44 +293,44 @@ public class HTMLFileSetServServerTest {
 		// KBaseReport.Report testing
 		final BasicShockClient bsc = new BasicShockClient(SHOCK_URL, TOKEN1);
 		
-		final ShockNode emptynode = bsc.addNode();
+		// empty nodes will not be allowed in the Blobstore but for now...
+		final ShockNode emptynode = bsc.addNode(toBAOS(""), 0, "fn", "fmt");
 		final String emptyhandle = makeHandle(emptynode);
 		CREATED_NODES.put(emptynode.getId().getId(),
 				new NodeAndHandle(emptynode, emptyhandle));
 		
-		final ShockNode delnode = bsc.addNode();
+		final ShockNode delnode = bsc.addNode(toBAOS(""), 0, "fn", "fmt");
 		final String delhandle = makeHandle(delnode);
 		CREATED_NODES.put(delnode.getId().getId(),
 				new NodeAndHandle(delnode, delhandle));
 		
-		final ShockNode badzipnode = bsc.addNode(new ByteArrayInputStream(
-				"This is not a zip file".getBytes()), "bad.zip", "zip");
+		final ShockNode badzipnode = bsc.addNode(
+				toBAOS("This is not a zip file"), 22, "bad.zip", "zip");
 		final String badziphandle = makeHandle(badzipnode);
 		CREATED_NODES.put(badzipnode.getId().getId(),
 				new NodeAndHandle(badzipnode, badziphandle));
 		
-		
 		final byte[] zip1 = makeZipFile("shock1", "shock1.txt");
-		final ShockNode node1 = bsc.addNode(new ByteArrayInputStream(zip1), "shock1.zip", "zip");
+		final ShockNode node1 = bsc.addNode(
+				new ByteArrayInputStream(zip1), zip1.length, "shock1.zip", "zip");
 		final String handle1 = makeHandle(node1);
 		CREATED_NODES.put(node1.getId().getId(), new NodeAndHandle(node1, handle1));
 
-		
 		final byte[] zip2 = makeZipFile("shock2", "shock2.txt");
 		final ShockNode node2 = bsc.addNode(new ByteArrayInputStream(zip2),
-				"shock2.zip", "zip");
+				zip2.length, "shock2.zip", "zip");
 		final String handle2 = makeHandle(node2);
 		CREATED_NODES.put(node2.getId().getId(), new NodeAndHandle(node2, handle2));
 
 		final byte[] zipWithDirs = Files.readAllBytes(PATH_TO_TEST_ZIP_WITH_DIRS);
 		final ShockNode dirnode = bsc.addNode(new ByteArrayInputStream(zipWithDirs),
-				"dirs.zip", "zip");
+				zipWithDirs.length, "dirs.zip", "zip");
 		final String dirhandle = makeHandle(dirnode);
 		CREATED_NODES.put(dirnode.getId().getId(), new NodeAndHandle(dirnode, dirhandle));
 		
 		final byte[] zipContentType = Files.readAllBytes(PATH_TO_TEST_ZIP_CONTENT_TYPE);
 		final ShockNode contentTypeNode = bsc.addNode(new ByteArrayInputStream(zipContentType),
-				"contenttype.zip", "zip");
+				zipContentType.length, "contenttype.zip", "zip");
 		final String contentTypeHandle = makeHandle(contentTypeNode);
 		CREATED_NODES.put(contentTypeNode.getId().getId(),
 				new NodeAndHandle(contentTypeNode, contentTypeHandle));
@@ -370,6 +370,10 @@ public class HTMLFileSetServServerTest {
 		//test bad zip files
 		saveHTMLFileSet(WS1, WS_READ.getE1(), "absolutezip", "foo", "/foo");
 		saveHTMLFileSet(WS1, WS_READ.getE1(), "escapezip", "foo", "bar/../../foo");
+	}
+	
+	private static ByteArrayInputStream toBAOS(final String utf8) {
+		return new ByteArrayInputStream(utf8.getBytes(StandardCharsets.UTF_8));
 	}
 	
 	private static void saveShockURLToKBaseReport(
