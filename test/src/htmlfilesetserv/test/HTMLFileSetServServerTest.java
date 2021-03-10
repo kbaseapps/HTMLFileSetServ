@@ -293,17 +293,6 @@ public class HTMLFileSetServServerTest {
 		// KBaseReport.Report testing
 		final BasicShockClient bsc = new BasicShockClient(SHOCK_URL, TOKEN1);
 		
-		// empty nodes will not be allowed in the Blobstore but for now...
-		final ShockNode emptynode = bsc.addNode(toBAOS(""), 0, "fn", "fmt");
-		final String emptyhandle = makeHandle(emptynode);
-		CREATED_NODES.put(emptynode.getId().getId(),
-				new NodeAndHandle(emptynode, emptyhandle));
-		
-		final ShockNode delnode = bsc.addNode(toBAOS(""), 0, "fn", "fmt");
-		final String delhandle = makeHandle(delnode);
-		CREATED_NODES.put(delnode.getId().getId(),
-				new NodeAndHandle(delnode, delhandle));
-		
 		final ShockNode badzipnode = bsc.addNode(
 				toBAOS("This is not a zip file"), 22, "bad.zip", "zip");
 		final String badziphandle = makeHandle(badzipnode);
@@ -339,16 +328,9 @@ public class HTMLFileSetServServerTest {
 				Arrays.asList(node1, node2));
 		saveKBaseReport(WS1, WS_READ.getE1(), "dirs", Arrays.asList(dirnode));
 		saveKBaseReport(WS1, WS_READ.getE1(), "contenttype", Arrays.asList(contentTypeNode));
-		saveKBaseReport(WS1, WS_READ.getE1(), "shocknofile2",
-				Arrays.asList(node1, emptynode));
-		OBJ_TO_NODES.put("shocknofile2", Arrays.asList(node1, emptynode));
 		saveKBaseReport(WS1, WS_READ.getE1(), "shockbadzip2",
 				Arrays.asList(node1, badzipnode));
 		OBJ_TO_NODES.put("shockbadzip2", Arrays.asList(node1, badzipnode));
-		saveKBaseReport(WS1, WS_READ.getE1(), "shockdelnode2",
-				Arrays.asList(node1, delnode));
-		OBJ_TO_NODES.put("shockdelnode2", Arrays.asList(node1, delnode));
-		bsc.deleteNode(delnode.getId());
 		
 		saveHTMLLinkListToKBaseReport(WS1, WS_READ.getE1(), "nolinks", null);
 		saveHTMLLinkListToKBaseReport(WS1, WS_READ.getE1(), "emptylinks", new LinkedList<>());
@@ -979,17 +961,7 @@ public class HTMLFileSetServServerTest {
 		testFail(path, TOKEN1.getToken(), 404,
 				"This KBase report does not contain html links", "cookie");
 	}
-	
-	@Test
-	public void testFailReportNoShockFile() throws Exception {
-		final String path = "/" + WS_READ.getE2() +
-				"/shocknofile2/-/$/1/shock2.txt";
-		final String node = OBJ_TO_NODES.get("shocknofile2")
-				.get(1).getId().getId();
-		testFail(path, TOKEN1.getToken(), 500, String.format(
-				"The shock node %s has no file", node), "cookie");
-	}
-	
+
 	@Test
 	public void testFailReportBadZipFile() throws Exception {
 		final String path = "/" + WS_READ.getE2() +
@@ -1016,22 +988,7 @@ public class HTMLFileSetServServerTest {
 		testFail(path, TOKEN1.getToken(), 500, String.format(
 				"No such shock node: %s", TEST_UUID), "cookie");
 	}
-	
-	@Test
-	public void testFailReportDeletedShockNode() throws Exception {
-		// deleted after saving so workspace calling the handle service to
-		// update sharing fails
-		final String path = "/" + WS_READ.getE2() +
-				"/shockdelnode2/-/$/0/shock2.txt";
-		final String shockID = OBJ_TO_NODES.get("shockdelnode2")
-				.get(1).getId().getId();
-		final String handleID = CREATED_NODES.get(shockID).handleID;
-		testFail(path, TOKEN1.getToken(), 500, String.format(
-				"Workspace reported a handle error: The Handle Manager " +
-				"reported a problem while attempting to set Handle ACLs: " +
-				"Unable to set acl(s) on handles %s", handleID), "cookie");
-	}
-	
+
 	@Test
 	public void testFailReportBadShockNodeID() throws Exception {
 		final String path = "/" + WS_READ.getE2() +
