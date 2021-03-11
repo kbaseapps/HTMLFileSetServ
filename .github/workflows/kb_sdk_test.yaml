@@ -48,9 +48,11 @@ jobs:
       shell: bash
       env:
         KBASE_TEST_TOKEN: ${{ secrets.KBASE_TEST_TOKEN }}
+        KBASE_TEST_TOKEN2: ${{ secrets.KBASE_TEST_TOKEN2 }}
       run: |
         # Add token to config
         sed -ie "s/^test_token=.*$/&$KBASE_TEST_TOKEN/g" ./test_local/test.cfg
+        sed -ie "s/^test_user2_token=.*$/&$KBASE_TEST_TOKEN2/g" ./test_local/test.cfg
 
     - name: Run tests
       if: "!contains(github.event.head_commit.message, 'skip ci')"
