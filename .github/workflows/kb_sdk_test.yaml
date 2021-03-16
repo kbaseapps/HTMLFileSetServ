@@ -33,7 +33,7 @@ jobs:
       if: "!contains(github.event.head_commit.message, 'skip ci')"
       shell: bash
       env:
-        KBASE_TEST_TOKEN: ${{ secrets.KBASE_TEST_TOKEN }}
+        KBASE_TEST_TOKEN: ${{ secrets.KBASE_CI_TOKEN }}
       run: |
         # Verify kb_sdk_actions clone worked
         test -f "$HOME/kb_sdk_actions/bin/kb-sdk" && echo "CI files cloned"
@@ -47,12 +47,16 @@ jobs:
       if: "!contains(github.event.head_commit.message, 'skip ci')"
       shell: bash
       env:
-        KBASE_TEST_TOKEN: ${{ secrets.KBASE_TEST_TOKEN }}
-        KBASE_TEST_TOKEN2: ${{ secrets.KBASE_TEST_TOKEN2 }}
+        KBASE_TEST_TOKEN: ${{ secrets.KBASE_CI_TOKEN }}
+        KBASE_TEST_TOKEN2: ${{ secrets.KBASE_CI_TOKEN2 }}
+        KBASE_ENDPOINT_ESCAPED: ${{ 'https:\/\/ci.kbase.us\/services' }}
+        KBASE_AUTH_SERVICE_URL_ESCAPED: ${{ 'https:\/\/ci.kbase.us\/services\/auth\/api\/legacy\/KBase\/Sessions\/Login' }}
       run: |
         # Add token to config
         sed -ie "s/^test_token=.*$/&$KBASE_TEST_TOKEN/g" ./test_local/test.cfg
         echo test_user2_token=$KBASE_TEST_TOKEN2 >> ./test_local/test.cfg
+        sed -ie "s/^kbase_endpoint=.*$/kbase_endpoint=$KBASE_ENDPOINT_ESCAPED/g" ./test_local/test.cfg
+        sed -ie "s/^auth_service_url=.*$/auth_service_url=$KBASE_AUTH_SERVICE_URL_ESCAPED/g" ./test_local/test.cfg
 
     - name: Run tests
       if: "!contains(github.event.head_commit.message, 'skip ci')"
