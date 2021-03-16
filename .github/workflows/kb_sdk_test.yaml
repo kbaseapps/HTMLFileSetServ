@@ -61,8 +61,6 @@ jobs:
     - name: Run tests
       if: "!contains(github.event.head_commit.message, 'skip ci')"
       shell: bash
-      env:
-        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       run: |
         sh $GITHUB_WORKSPACE/kb_sdk_actions/bin/kb-sdk test
-        bash <(curl -s https://codecov.io/bash)
+        # TO DO: Codecov needs to be added at some point
