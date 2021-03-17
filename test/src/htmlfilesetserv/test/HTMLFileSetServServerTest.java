@@ -292,7 +292,12 @@ public class HTMLFileSetServServerTest {
 		
 		// KBaseReport.Report testing
 		final BasicShockClient bsc = new BasicShockClient(SHOCK_URL, TOKEN1);
-		
+
+		final ShockNode delnode = bsc.addNode(toBAOS("This a test for deleted node"), 28, "fn", "fmt");
+		final String delhandle = makeHandle(delnode);
+		CREATED_NODES.put(delnode.getId().getId(),
+				new NodeAndHandle(delnode, delhandle));
+
 		final ShockNode badzipnode = bsc.addNode(
 				toBAOS("This is not a zip file"), 22, "bad.zip", "zip");
 		final String badziphandle = makeHandle(badzipnode);
@@ -323,7 +328,6 @@ public class HTMLFileSetServServerTest {
 		final String contentTypeHandle = makeHandle(contentTypeNode);
 		CREATED_NODES.put(contentTypeNode.getId().getId(),
 				new NodeAndHandle(contentTypeNode, contentTypeHandle));
-		
 		saveKBaseReport(WS1, WS_READ.getE1(), "good2",
 				Arrays.asList(node1, node2));
 		saveKBaseReport(WS1, WS_READ.getE1(), "dirs", Arrays.asList(dirnode));
@@ -331,6 +335,10 @@ public class HTMLFileSetServServerTest {
 		saveKBaseReport(WS1, WS_READ.getE1(), "shockbadzip2",
 				Arrays.asList(node1, badzipnode));
 		OBJ_TO_NODES.put("shockbadzip2", Arrays.asList(node1, badzipnode));
+		saveKBaseReport(WS1, WS_READ.getE1(), "shockdelnode2",
+				Arrays.asList(node1, delnode));
+		OBJ_TO_NODES.put("shockdelnode2", Arrays.asList(node1, delnode));
+		bsc.deleteNode(delnode.getId());
 		
 		saveHTMLLinkListToKBaseReport(WS1, WS_READ.getE1(), "nolinks", null);
 		saveHTMLLinkListToKBaseReport(WS1, WS_READ.getE1(), "emptylinks", new LinkedList<>());
@@ -987,6 +995,21 @@ public class HTMLFileSetServServerTest {
 				"/shocknonode/-/$/0/shock2.txt";
 		testFail(path, TOKEN1.getToken(), 500, String.format(
 				"No such shock node: %s", TEST_UUID), "cookie");
+	}
+
+	@Test
+	public void testFailReportDeletedShockNode() throws Exception {
+		// deleted after saving so workspace calling the handle service to
+		// update sharing fails
+		final String path = "/" + WS_READ.getE2() +
+				"/shockdelnode2/-/$/0/shock2.txt";
+		final String shockID = OBJ_TO_NODES.get("shockdelnode2")
+				.get(1).getId().getId();
+		final String handleID = CREATED_NODES.get(shockID).handleID;
+		testFail(path, TOKEN1.getToken(), 500, String.format(
+				"Workspace reported a handle error: The Handle Manager " +
+				"reported a problem while attempting to set Handle ACLs: " +
+				"&#39;Unable to set acl(s) on handles %s&#39;", handleID), "cookie");
 	}
 
 	@Test
